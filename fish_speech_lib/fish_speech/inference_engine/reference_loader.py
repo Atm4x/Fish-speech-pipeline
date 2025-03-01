@@ -7,14 +7,14 @@ import torch
 import torchaudio
 from loguru import logger
 
-from fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
-from fish_speech.utils.file import (
+from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
+from fish_speech_lib.fish_speech.utils.file import (
     AUDIO_EXTENSIONS,
     audio_to_bytes,
     list_files,
     read_ref_text,
 )
-from fish_speech.utils.schema import ServeReferenceAudio
+from fish_speech_lib.fish_speech.utils.schema import ServeReferenceAudio
 
 
 class ReferenceLoader:

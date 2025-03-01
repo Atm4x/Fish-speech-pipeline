@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, conint, conlist, model_validator
 from pydantic.functional_validators import SkipValidation
 from typing_extensions import Annotated
 
-from fish_speech.conversation import Message, TextPart, VQPart
+from fish_speech_lib.fish_speech.conversation import Message, TextPart, VQPart
 
 
 class ServeVQPart(BaseModel):

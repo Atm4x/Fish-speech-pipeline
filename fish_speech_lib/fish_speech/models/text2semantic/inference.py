@@ -16,16 +16,16 @@ from loguru import logger
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from fish_speech.conversation import (
+from fish_speech_lib.fish_speech.conversation import (
     CODEBOOK_PAD_TOKEN_ID,
     Conversation,
     Message,
     TextPart,
     VQPart,
 )
-from fish_speech.models.text2semantic.llama import BaseModelArgs
-from fish_speech.text import clean_text, split_text
-from fish_speech.tokenizer import IM_END_TOKEN, FishTokenizer
+from fish_speech_lib.fish_speech.models.text2semantic.llama import BaseModelArgs
+from fish_speech_lib.fish_speech.text import clean_text, split_text
+from fish_speech_lib.fish_speech.tokenizer import IM_END_TOKEN, FishTokenizer
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 torch._inductor.config.coordinate_descent_tuning = True
@@ -38,7 +38,7 @@ if hasattr(torch._inductor.config, "fx_graph_cache"):
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from fish_speech.models.text2semantic.llama import (
+from fish_speech_lib.fish_speech.models.text2semantic.llama import (
     BaseTransformer,
     DualARTransformer,
     NaiveTransformer,
