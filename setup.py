@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='fish_speech_pipe',
+    name='fish_speech_lib',
     version='0.1.0',
     packages=find_packages(),  #  ВАЖНО: find_packages()
     install_requires=[
