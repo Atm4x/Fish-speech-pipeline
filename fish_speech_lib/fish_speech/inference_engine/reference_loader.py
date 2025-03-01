@@ -9,8 +9,8 @@ from loguru import logger
 
 from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
 
-x123 = FireflyArchitecture()
-print(x123)
+
+print(FireflyArchitecture)
 
 from fish_speech_lib.fish_speech.utils.file import (
     AUDIO_EXTENSIONS,
