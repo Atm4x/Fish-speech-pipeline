@@ -50,5 +50,5 @@ dependencies = [
 [project.scripts]
 fish_speech_inference = "fish_speech_pipe.inference:main"
 
-find-packages = true
+find-packages = "true"
 
