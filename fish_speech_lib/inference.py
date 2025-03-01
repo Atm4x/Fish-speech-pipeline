@@ -8,7 +8,7 @@ from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
 from fish_speech.models.vqgan.inference import load_model as load_decoder_model
 from fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
 from fish_speech.utils.file import audio_to_bytes, read_ref_text
-from huggingface_hub import hf_hub_download  # Нужен для download_models
+from huggingface_hub import hf_hub_download  # Импортируем
 
 class FishSpeech:
     def __init__(
@@ -16,81 +16,94 @@ class FishSpeech:
         device: str = "cuda",
         half: bool = False,
         compile_model: bool = False,
-        llama_checkpoint_path: Union[str, Path] = "checkpoints/fish-speech-1.5",  # Пути как строки
-        decoder_checkpoint_path: Union[str, Path] = "checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
+        llama_checkpoint_path: str = "checkpoints/fish-speech-1.5",  # Пути по умолчанию
+        decoder_checkpoint_path: str = "checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
         decoder_config_name: str = "firefly_gan_vq",
-        load_models_from_local_dir: bool = True,
-        streaming: bool = False,
-        max_reference_length: int = 10,
+        streaming: bool = False, # Добавили в init
     ):
         """
         Инициализирует модели FishSpeech.
 
         Args:
-            device:  "cuda" (по умолчанию), "cpu", или "mps".
+            device: "cuda" (по умолчанию), "cpu", или "mps".
             half: Использовать ли FP16 (half-precision).
-            compile_model:  Использовать ли torch.compile для ускорения.
-            llama_checkpoint_path: Путь к чекпоинту LLAMA модели (str или Path).
-            decoder_checkpoint_path: Путь к чекпоинту декодера (VQ-GAN) (str или Path).
+            compile_model: Использовать ли torch.compile для ускорения.
+            llama_checkpoint_path: Путь к чекпоинту LLAMA модели.
+            decoder_checkpoint_path: Путь к чекпоинту декодера (VQ-GAN).
             decoder_config_name: Имя конфигурации декодера (из Hydra).
-            load_models_from_local_dir: Загружать ли модели из локальной директории.
-                Если False, то модели будут скачаны с Hugging Face Hub.
-            streaming: Включить/выключить стриминг (пока не используется).
-             max_reference_length: Максимальная длина референсного аудио.
+            streaming: Включить стриминг
         """
-
         self.device = self._resolve_device(device)
         self.precision = torch.half if half else torch.bfloat16
         self.compile_model = compile_model
         self.streaming = streaming
-        self.max_reference_length = (
-            max_reference_length * 44100 // 512
-        )  #  фреймов
+        self.llama_checkpoint_path = llama_checkpoint_path
+        self.decoder_checkpoint_path = decoder_checkpoint_path
 
-        if not load_models_from_local_dir:
-             self.download_models()
-             llama_checkpoint_path = (
-                 "checkpoints/fish-speech-1.5"  # Use default path after download
-             )
+        # Проверяем наличие файлов и загружаем модели
+        self._load_or_download_models()
 
-        # Инициализация TTSInferenceEngine
+        # Инициализация TTSInferenceEngine (уже после загрузки моделей)
         self.engine = self._initialize_engine(
-            str(llama_checkpoint_path), # Передаем как строки
-            str(decoder_checkpoint_path),
+            self.llama_checkpoint_path,
+            self.decoder_checkpoint_path,
             decoder_config_name,
             self.device,
             self.precision,
             self.compile_model,
         )
+    def _download_models(self):
+      from huggingface_hub import hf_hub_download
+      default_local_path = "checkpoints/fish-speech-1.5"
 
-    def download_models(self):
-        from huggingface_hub import hf_hub_download
-        default_local_path = "checkpoints/fish-speech-1.5"
+      # Hugging Face repo ID
+      repo_id = "fishaudio/fish-speech-1.5"
 
-        # Hugging Face repo ID
-        repo_id = "fishaudio/fish-speech-1.5"
+      # Model files to download
+      model_files = [
+          "model.pth",
+          "tokenizer.tiktoken",
+          "config.json",
+          "firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
+      ]
 
-        # Model files to download
-        model_files = [
-            "model.pth",
-            "tokenizer.tiktoken",
-            "config.json",
-            "firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
-        ]
+      # Download using the function
+      for file in model_files:
+        file_path = Path(default_local_path) / file
+        if not file_path.exists():
+          print(f"{file} does not exist, downloading from Hugging Face repository...")
+          hf_hub_download(
+          repo_id=repo_id,
+          filename=file,
+          local_dir=default_local_path,
+          local_dir_use_symlinks=False,
+        )
+        else:
+           print(f"{file} already exists, skipping download.")
 
-        # Download using the function
-        for file in model_files:
-            file_path = Path(default_local_path) / file
-            if not file_path.exists():
-                print(f"{file} does not exist, downloading from Hugging Face repository...")
-                hf_hub_download(
-                repo_id=repo_id,
-                filename=file,
-                local_dir=default_local_path,
-                local_dir_use_symlinks=False,
-            )
-            else:
-                print(f"{file} already exists, skipping download.")
+
+    def _load_or_download_models(self):
+        """Загружает модели из локальной директории или скачивает с HuggingFace Hub."""
+        local_llama_path = Path(self.llama_checkpoint_path)
+        local_decoder_path = Path(self.decoder_checkpoint_path)
+        config_path = local_llama_path / "config.json"
+        tokenizer_path = local_llama_path / "tokenizer.tiktoken"
+
+        # Проверяем наличие основных файлов
+        if (
+            local_llama_path.exists()
+            and local_decoder_path.exists()
+            and config_path.exists()
+            and tokenizer_path.exists()
+        ):
+
+            print("Loading models from local directory.")
+            return # Модели уже есть
+
+        print("Local models not found, downloading from Hugging Face Hub...")
+        self._download_models()
+
+
 
     def _resolve_device(self, device: str) -> str:
         if device == "cuda" and not torch.cuda.is_available():
@@ -111,7 +124,6 @@ class FishSpeech:
         compile_model,
     ):
         """Инициализирует и возвращает TTSInferenceEngine."""
-
         llama_queue = launch_thread_safe_queue(
             checkpoint_path=llama_checkpoint_path,
             device=device,
@@ -121,11 +133,6 @@ class FishSpeech:
         decoder_model = load_decoder_model(
             config_name=decoder_config_name, checkpoint_path=decoder_checkpoint_path, device=device
         )
-
-        # Добавляем slice_frames и hop_length
-        decoder_model.slice_frames = self.max_reference_length
-        decoder_model.hop_length = decoder_model.spec_transform.hop_length
-
         if precision == torch.half:
             decoder_model = decoder_model.half()
 
@@ -136,7 +143,7 @@ class FishSpeech:
             compile=compile_model,
         )
 
-        # "Прогрев" модели
+        # "Прогрев" модели.  Делаем это *один раз* при инициализации.
         engine.inference(
             ServeTTSRequest(
                 text="test",
@@ -190,21 +197,20 @@ class FishSpeech:
                 audio_bytes = audio_to_bytes(reference_audio)
                 # Если есть .lab файл, читаем текст из него, иначе ""
                 lab_file = Path(reference_audio).with_suffix(".lab")
-                reference_text = (
-                    read_ref_text(str(lab_file)) if lab_file.exists() else ""
-                )
-                references = [
-                    ServeReferenceAudio(audio=audio_bytes, text=reference_text)
-                ]
+                reference_text = read_ref_text(str(lab_file)) if lab_file.exists() else ""
+                references = [ServeReferenceAudio(audio=audio_bytes, text=reference_text)]
             elif isinstance(reference_audio, bytes):
                 # reference_audio это байты, используем reference_audio_text
                 references = [
                     ServeReferenceAudio(audio=reference_audio, text=reference_audio_text)
                 ]
             else:
-                raise TypeError("reference_audio must be str, Path, bytes, or None")
+                raise TypeError(
+                    "reference_audio must be str, Path, bytes, or None"
+                )
         else:
             references = []
+
 
         request = ServeTTSRequest(
             text=text,
@@ -215,25 +221,28 @@ class FishSpeech:
             repetition_penalty=repetition_penalty,
             temperature=temperature,
             seed=seed,
-            streaming=False,  # Мы пока НЕ поддерживаем стриминг в библиотеке
+            streaming=self.streaming,  # Стриминг
             normalize=True,
-            use_memory_cache="on" if use_memory_cache else "off",  # Добавлено
+            use_memory_cache="on" if use_memory_cache else "off", # Добавлено
             reference_id=None,  # reference_id  не используем, используем references
         )
+
+        if seed is not None:
+            torch.manual_seed(seed) # Применяем seed
+            if self.device.startswith("cuda"):
+                torch.cuda.manual_seed(seed)
 
         # Вызываем inference у TTSInferenceEngine
         result_generator = self.engine.inference(request)
         final_result = None
-        for result in result_generator:  # Тут вся логика стриминга, если что
+        for result in result_generator:
             if result.code == "header":
-                #   process wav header if needed (for streaming)
-                pass  # Сейчас не нужно
+                pass
             elif result.code == "segment":
-                #   process each audio segment, for streaming
-                pass  # Сейчас не нужно
+                pass
             elif result.code == "final":
                 final_result = result
-                break  # Выходим из цикла, как только получили final
+                break
             elif result.code == "error":
                 raise result.error
 
