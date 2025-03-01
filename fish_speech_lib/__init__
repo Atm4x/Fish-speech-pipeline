@@ -6,6 +6,8 @@ from fish_speech_lib.inference import FishSpeech
 from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG
 
 # Импfish_speech_libорты из inference_engine
+
+from fish_speech_lib.fish_speech import *
 from fish_speech_lib.fish_speech.inference_engine.reference_loader import ReferenceLoader
 from fish_speech_lib.fish_speech.inference_engine.utils import get_reference_audio_from_file
 from fish_speech_lib.fish_speech.inference_engine.vq_manager import VQManager
