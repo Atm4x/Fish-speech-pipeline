@@ -51,6 +51,5 @@ dependencies = [
 fish_speech_inference = "fish_speech_pipe.inference:main"
 
 
-
 [tool.setuptools]
-packages = ["fish_speech_lib"]
+packages = ["fish_speech_lib", "fish_speech_lib.fish_speech", "fish_speech_lib.fish_speech.inference_engine", "fish_speech_lib.fish_speech.models", "fish_speech_lib.fish_speech.utils"]
