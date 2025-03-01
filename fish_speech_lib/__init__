@@ -1,7 +1,31 @@
-from fish_speech_lib.inference import *
-from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG 
 
-from fish_speech_lib.fish_speech import *
+# Импортируем основной класс
+from .inference import FishSpeech
 
+# Импортируем конфигурацию
+from .config import FIREFLY_GAN_VQ_CONFIG
+
+# Импорты из inference_engine
+from .fish_speech.inference_engine.reference_loader import ReferenceLoader
+from .fish_speech.inference_engine.utils import get_reference_audio_from_file
+from .fish_speech.inference_engine.vq_manager import VQManager
+from .fish_speech.inference_engine import TTSInferenceEngine
+
+# Импорты из text2semantic
+from .fish_speech.models.text2semantic.inference import launch_thread_safe_queue
+from .fish_speech.models.text2semantic.lit_module import Text2SemanticLitModule
+
+# Импорты из vqgan
+from .fish_speech.models.vqgan.inference import load_model as load_decoder_model
+
+# Импорты из utils
+from .fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
+from .fish_speech.utils.file import audio_to_bytes, read_ref_text
+
+# Импорты из text
+from .fish_speech.text.clean import clean_text
+from .fish_speech.text.spliter import split_text_into_sentences
+
+# Экспортируем только основной класс для упрощения интерфейса
 __all__ = ["FishSpeech"]
-__version__ = "0.1.0"  # Указывай версию
+__version__ = "0.1.0"
