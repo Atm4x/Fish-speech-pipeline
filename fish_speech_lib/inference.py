@@ -8,7 +8,9 @@ from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
 from fish_speech.models.vqgan.inference import load_model as load_decoder_model
 from fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
 from fish_speech.utils.file import audio_to_bytes, read_ref_text
-from huggingface_hub import hf_hub_download  # Импортируем
+from huggingface_hub import hf_hub_download
+
+
 
 class FishSpeech:
     def __init__(
@@ -104,7 +106,6 @@ class FishSpeech:
         self._download_models()
 
 
-
     def _resolve_device(self, device: str) -> str:
         if device == "cuda" and not torch.cuda.is_available():
             print("CUDA not available, using CPU.")
@@ -118,7 +119,6 @@ class FishSpeech:
         self,
         llama_checkpoint_path,
         decoder_checkpoint_path,
-        decoder_config_name,
         device,
         precision,
         compile_model,
@@ -131,7 +131,7 @@ class FishSpeech:
             compile=compile_model,
         )
         decoder_model = load_decoder_model(
-            config_name=decoder_config_name, checkpoint_path=decoder_checkpoint_path, device=device
+            checkpoint_path=decoder_checkpoint_path, device=device
         )
         if precision == torch.half:
             decoder_model = decoder_model.half()
@@ -158,15 +158,15 @@ class FishSpeech:
         self,
         text: str,
         reference_audio: Union[str, Path, bytes, None] = None,
-        reference_audio_text: str = "",
+        reference_audio_text: str = "",  # Больше не используется, если reference_audio - путь
         *,
         top_p: float = 0.7,
         temperature: float = 0.7,
         repetition_penalty: float = 1.2,
         max_new_tokens: int = 1024,
         chunk_length: int = 200,
-        seed: Optional[int] = 42,  # Фиксированный seed по умолчанию
-        use_memory_cache: bool = True,  # Добавили параметр use_memory_cache
+        seed: Optional[int] = None,  # Фиксированный seed по умолчанию
+        use_memory_cache: bool = True, # Добавили параметр use_memory_cache
     ) -> tuple[int, np.ndarray]:
         """
         Генерирует речь по тексту.
@@ -176,8 +176,7 @@ class FishSpeech:
             reference_audio: Путь к референсному аудио (str или Path),
                 аудиофайл в байтах, или None.  Если указан путь,
                 то reference_audio_text игнорируется.
-            reference_audio_text: Текст для референсного аудио (используется,
-                только если reference_audio -- bytes).
+            reference_audio_text:  Устарел.
             top_p: Параметр top_p для сэмплирования.
             temperature: Параметр temperature для сэмплирования.
             repetition_penalty: Параметр repetition_penalty для сэмплирования.
@@ -191,23 +190,8 @@ class FishSpeech:
         """
 
         # Создаем ServeTTSRequest
-        if reference_audio is not None:
-            if isinstance(reference_audio, (str, Path)):
-                #  reference_audio это путь к файлу
-                audio_bytes = audio_to_bytes(reference_audio)
-                # Если есть .lab файл, читаем текст из него, иначе ""
-                lab_file = Path(reference_audio).with_suffix(".lab")
-                reference_text = read_ref_text(str(lab_file)) if lab_file.exists() else ""
-                references = [ServeReferenceAudio(audio=audio_bytes, text=reference_text)]
-            elif isinstance(reference_audio, bytes):
-                # reference_audio это байты, используем reference_audio_text
-                references = [
-                    ServeReferenceAudio(audio=reference_audio, text=reference_audio_text)
-                ]
-            else:
-                raise TypeError(
-                    "reference_audio must be str, Path, bytes, or None"
-                )
+        if reference_audio:
+            references = self.get_reference_audio(reference_audio, reference_audio_text)
         else:
             references = []
 
@@ -221,28 +205,25 @@ class FishSpeech:
             repetition_penalty=repetition_penalty,
             temperature=temperature,
             seed=seed,
-            streaming=self.streaming,  # Стриминг
-            normalize=True,
+            streaming=False,  # Мы пока НЕ поддерживаем стриминг в библиотеке
+            normalize=True,    # Всегда нормализуем текст
             use_memory_cache="on" if use_memory_cache else "off", # Добавлено
             reference_id=None,  # reference_id  не используем, используем references
         )
 
-        if seed is not None:
-            torch.manual_seed(seed) # Применяем seed
-            if self.device.startswith("cuda"):
-                torch.cuda.manual_seed(seed)
-
         # Вызываем inference у TTSInferenceEngine
         result_generator = self.engine.inference(request)
         final_result = None
-        for result in result_generator:
+        for result in result_generator:  # Тут вся логика стриминга, если что
             if result.code == "header":
-                pass
+                #   process wav header if needed (for streaming)
+                pass # Сейчас не нужно
             elif result.code == "segment":
-                pass
+                #   process each audio segment, for streaming
+                pass # Сейчас не нужно
             elif result.code == "final":
                 final_result = result
-                break
+                break  # Выходим из цикла, как только получили final
             elif result.code == "error":
                 raise result.error
 
@@ -251,3 +232,13 @@ class FishSpeech:
 
         sample_rate, audio_data = final_result.audio
         return sample_rate, audio_data
+    
+    def get_reference_audio(self, reference_audio: str, reference_text: str) -> list:
+        """
+        Get the reference audio bytes.
+        """
+
+        with open(reference_audio, "rb") as audio_file:
+            audio_bytes = audio_file.read()
+
+        return [ServeReferenceAudio(audio=audio_bytes, text=reference_text)]
