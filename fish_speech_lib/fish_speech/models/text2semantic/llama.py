@@ -88,7 +88,7 @@ class BaseModelArgs:
             case "dual_ar":
                 cls = DualARModelArgs
             case _:
-                raise ValueError(f"Unknown model type: {data['model_type']}")
+                raise ValueError(f"Unknown 3 model type: {data['model_type']}")
 
         return cls(**data)
 
@@ -388,7 +388,7 @@ class BaseTransformer(nn.Module):
             case "dual_ar":
                 model_cls = DualARTransformer
             case _:
-                raise ValueError(f"Unknown model type: {config.model_type}")
+                raise ValueError(f"Unknown 4 model type: {config.model_type}")
 
         tokenizer_path = str(path) + "/tokenizer.tiktoken"
         tokenizer = FishTokenizer(tokenizer_path)

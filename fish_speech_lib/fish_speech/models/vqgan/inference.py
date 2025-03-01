@@ -98,7 +98,7 @@ def main(input_path, output_path, config_name, checkpoint_path, device):
         indices = torch.from_numpy(indices).to(device).long()
         assert indices.ndim == 2, f"Expected 2D indices, got {indices.ndim}"
     else:
-        raise ValueError(f"Unknown input type: {input_path}")
+        raise ValueError(f"Unknown 5 input type: {input_path}")
 
     # Restore
     feature_lengths = torch.tensor([indices.shape[1]], device=device)

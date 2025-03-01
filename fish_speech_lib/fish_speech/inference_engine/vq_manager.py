@@ -25,7 +25,7 @@ class VQManager:
                 feature_lengths=feature_lengths,
             )[0].squeeze()
 
-        raise ValueError(f"Unknown model type: {type(self.decoder_model)}")
+        raise ValueError(f"Unknown 1 model type: {type(self.decoder_model)}")
 
     def encode_reference(self, reference_audio, enable_reference_audio):
         if enable_reference_audio and reference_audio is not None:
@@ -49,7 +49,7 @@ class VQManager:
                 prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
                 logger.info(f"Encoded prompt: {prompt_tokens.shape}")
             else:
-                raise ValueError(f"Unknown model type: {type(self.decoder_model)}")
+                raise ValueError(f"Unknown 2 model type: {type(self.decoder_model)}")
         else:
             prompt_tokens = None
             logger.info("No reference audio provided")
