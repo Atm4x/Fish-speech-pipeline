@@ -3,7 +3,6 @@ from typing import Callable
 import torch
 from loguru import logger
 
-from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
 
 
 class VQManager:

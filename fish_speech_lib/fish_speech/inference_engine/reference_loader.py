@@ -7,10 +7,9 @@ import torch
 import torchaudio
 from loguru import logger
 
-from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
+# from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
 
 
-print(FireflyArchitecture)
 
 from fish_speech_lib.fish_speech.utils.file import (
     AUDIO_EXTENSIONS,
