@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Union, Optional
 import numpy as np
 
-from fish_speech_lib.fish_speech.inference_engine import TTSInferenceEngine
+from fish_speech.inference_engine import TTSInferenceEngine
 from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
 from fish_speech.models.vqgan.inference import load_model as load_decoder_model
 from fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
