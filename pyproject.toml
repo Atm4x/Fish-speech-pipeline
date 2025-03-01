@@ -50,5 +50,7 @@ dependencies = [
 [project.scripts]
 fish_speech_inference = "fish_speech_pipe.inference:main"
 
+
+
 [tool.setuptools]
-find-packages.namespaces = false
+packages = ["fish_speech_lib"]
