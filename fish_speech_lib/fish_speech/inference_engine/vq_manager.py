@@ -19,11 +19,11 @@ class VQManager:
         )
         logger.info(f"VQ features: {codes.shape}")
 
-        if isinstance(self.decoder_model, FireflyArchitecture):
-            return self.decoder_model.decode(
-                indices=codes[None],
-                feature_lengths=feature_lengths,
-            )[0].squeeze()
+        #if isinstance(self.decoder_model, FireflyArchitecture):
+        return self.decoder_model.decode(
+            indices=codes[None],
+            feature_lengths=feature_lengths,
+        )[0].squeeze()
 
         raise ValueError(f"Unknown 1 model type: {type(self.decoder_model)}")
 
