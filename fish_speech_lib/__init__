@@ -1,4 +1,4 @@
-from fish_speech_lib.inference import FishSpeech
+from fish_speech_lib.inference import *
 from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG 
 
 __all__ = ["FishSpeech"]
