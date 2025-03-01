@@ -1,20 +1,7 @@
-# fish_speech_lib/__init__.py
+from fish_speech_lib.inference import *
+from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG 
 
-# Импортируем основной класс
-from .inference import FishSpeech
+from fish_speech_lib.fish_speech import *
 
-# Импортируем конфигурацию
-from .config import FIREFLY_GAN_VQ_CONFIG
-
-import fish_speech_lib.fish_speech
-import fish_speech_lib.fish_speech.inference_engine
-import fish_speech_lib.fish_speech.models.text2semantic
-import fish_speech_lib.fish_speech.models.vqgan
-import fish_speech_lib.fish_speech.utils
-import fish_speech_lib.fish_speech.utils
-import fish_speech_lib.fish_speech.text
-import fish_speech_lib.fish_speech.text
-
-# Экспортируем только основной класс для упрощения интерфейса
 __all__ = ["FishSpeech"]
-__version__ = "0.1.0"
+__version__ = "0.1.0"  # Указывай версию
