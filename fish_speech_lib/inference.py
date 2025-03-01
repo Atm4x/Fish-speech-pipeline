@@ -49,7 +49,6 @@ class FishSpeech:
         self.engine = self._initialize_engine(
             self.llama_checkpoint_path,
             self.decoder_checkpoint_path,
-            decoder_config_name,
             self.device,
             self.precision,
             self.compile_model,
