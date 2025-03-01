@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Union, Optional
 import numpy as np
 
-from fish_speech.inference_engine import TTSInferenceEngine
-from fish_speech.models.text2semantic.inference import launch_thread_safe_queue
-from fish_speech.models.vqgan.inference import load_model as load_decoder_model
-from fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
-from fish_speech.utils.file import audio_to_bytes, read_ref_text
+from .fish_speech.inference_engine import TTSInferenceEngine
+from .fish_speech.models.text2semantic.inference import launch_thread_safe_queue
+from .fish_speech.models.vqgan.inference import load_model as load_decoder_model
+from .fish_speech.utils.schema import ServeTTSRequest, ServeReferenceAudio
+from .fish_speech.utils.file import audio_to_bytes, read_ref_text
 from huggingface_hub import hf_hub_download
 
 
