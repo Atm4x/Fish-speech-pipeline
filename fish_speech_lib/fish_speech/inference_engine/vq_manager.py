@@ -3,6 +3,7 @@ from typing import Callable
 import torch
 from loguru import logger
 
+from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
 
 
 class VQManager:
@@ -42,7 +43,7 @@ class VQManager:
             logger.info(
                 f"Loaded audio with {audios.shape[2] / self.decoder_model.spec_transform.sample_rate:.2f} seconds"
             )
-
+            print(self.decoder_model)
             # VQ Encoder
             if isinstance(self.decoder_model, FireflyArchitecture):
                 prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
