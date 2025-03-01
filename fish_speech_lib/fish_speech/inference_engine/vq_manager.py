@@ -43,7 +43,6 @@ class VQManager:
             logger.info(
                 f"Loaded audio with {audios.shape[2] / self.decoder_model.spec_transform.sample_rate:.2f} seconds"
             )
-            print(self.decoder_model)
             # VQ Encoder
             prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
             logger.info(f"Encoded prompt: {prompt_tokens.shape}")
