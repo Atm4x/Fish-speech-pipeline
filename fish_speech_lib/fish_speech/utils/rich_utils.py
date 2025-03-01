@@ -9,7 +9,7 @@ from lightning.pytorch.utilities import rank_zero_only
 from omegaconf import DictConfig, OmegaConf, open_dict
 from rich.prompt import Prompt
 
-from fish_speech.utils import logger as log
+from fish_speech_lib.fish_speech.utils import logger as log
 
 
 @rank_zero_only
