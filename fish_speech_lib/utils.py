@@ -8,11 +8,11 @@ import librosa
 import numpy as np
 import io
 
-from fish_speech.models.text2semantic import inference as text2semantic_inference
-from fish_speech.text.clean import clean_text
-from fish_speech.utils.file import audio_to_bytes
-from fish_speech.tokenizer import IM_END_TOKEN
-from fish_speech.conversation import (
+from .fish_speech.models.text2semantic import inference as text2semantic_inference
+from .fish_speech.text.clean import clean_text
+from .fish_speech.utils.file import audio_to_bytes
+from .fish_speech.tokenizer import IM_END_TOKEN
+from .fish_speech.conversation import (
     Conversation,
     Message,
     TextPart,
