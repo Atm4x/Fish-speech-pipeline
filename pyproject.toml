@@ -60,6 +60,7 @@ packages = [
     "fish_speech_lib.fish_speech.models.vqgan", 
     "fish_speech_lib.fish_speech.models.vqgan.modules", 
     "fish_speech_lib.fish_speech.models.text2semantic", 
-    "fish_speech_lib.fish_speech.utils"
+    "fish_speech_lib.fish_speech.utils",
+    "fish_speech_lib.fish_speech.text"
     
     ]
