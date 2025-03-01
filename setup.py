@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='fish_speech_lib',
+    name='fish_speech_pipe',
     version='0.1.0',
     packages=find_packages(),  #  ВАЖНО: find_packages()
     install_requires=[
@@ -48,6 +48,6 @@ setup(
         'License :: OSI Approved :: MIT License',  # Или другую лицензию
         'Operating System :: OS Independent',
     ],
-    # scripts=['fish_speech_lib/inference.py'], # УДАЛИТЬ! Не нужно
+    scripts=['fish_speech_lib/inference.py'], 
     python_requires='>=3.8',  # Укажи минимальную версию Python
 )
