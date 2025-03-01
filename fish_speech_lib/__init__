@@ -1,5 +1,5 @@
 from .inference import FishSpeech
-from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG 
+from .config import FIREFLY_GAN_VQ_CONFIG 
 
 __all__ = ["FishSpeech"]
 __version__ = "0.1.0"  # Указывай версию
