@@ -146,7 +146,7 @@ class FishSpeech:
             ServeTTSRequest(
                 text="test",
                 references=[],
-                max_new_tokens=10,  # Небольшое значение для прогрева
+                max_new_tokens=100,  # Небольшое значение для прогрева
             )
         )
         return engine
@@ -217,6 +217,7 @@ class FishSpeech:
                 #   process wav header if needed (for streaming)
                 pass # Сейчас не нужно
             elif result.code == "segment":
+                print("test:", str(result.audio[1]))
                 #   process each audio segment, for streaming
                 pass # Сейчас не нужно
             elif result.code == "final":
