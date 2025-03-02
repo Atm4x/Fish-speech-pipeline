@@ -25,11 +25,6 @@ pip install git+https://github.com/Atm4x/Fish-speech-pipeline#egg=fish_speech_li
 
 3) Finally, create a `.project-root` file in the root directory of your project.
 
-
-## How it Works
-1. **Text-to-Speech (TTS):** The library processes text input and generates corresponding speech.
-2. **Voice Cloning:** With a reference audio file provided, the model can mimic the voice characteristics of the reference.
-
 ## Usage
 
 Fish-Speech-Lib provides a class called `FishSpeech`. There are a few parameters that are optional:
