@@ -14,6 +14,7 @@ from hydra.utils import instantiate
 
 pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
+print("tf it is nor working")
 from fish_speech_lib.fish_speech.utils.file import AUDIO_EXTENSIONS
 
 # register eval resolver
