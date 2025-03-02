@@ -45,7 +45,8 @@ dependencies = [
     "pydantic==2.9.2",
     "cachetools",
     "huggingface-hub",
-    "loralib"
+    "loralib",
+    "vector_quantize_pytorch==1.14.24",
 ]
 
 [project.scripts]

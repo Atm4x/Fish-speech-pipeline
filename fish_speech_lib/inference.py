@@ -20,7 +20,6 @@ class FishSpeech:
         compile_model: bool = False,
         llama_checkpoint_path: str = "checkpoints/fish-speech-1.5",  # Пути по умолчанию
         decoder_checkpoint_path: str = "checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
-        decoder_config_name: str = "firefly_gan_vq",
         streaming: bool = False, # Добавили в init
     ):
         """

@@ -19,11 +19,11 @@ class VQManager:
         )
         logger.info(f"VQ features: {codes.shape}")
 
-        #if isinstance(self.decoder_model, FireflyArchitecture):
-        return self.decoder_model.decode(
-            indices=codes[None],
-            feature_lengths=feature_lengths,
-        )[0].squeeze()
+        if isinstance(self.decoder_model, FireflyArchitecture):
+            return self.decoder_model.decode(
+                indices=codes[None],
+                feature_lengths=feature_lengths,
+            )[0].squeeze()
 
         raise ValueError(f"Unknown 1 model type: {type(self.decoder_model)}")
 
@@ -44,13 +44,13 @@ class VQManager:
                 f"Loaded audio with {audios.shape[2] / self.decoder_model.spec_transform.sample_rate:.2f} seconds"
             )
             # VQ Encoder
-            prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
-            logger.info(f"Encoded prompt: {prompt_tokens.shape}")
-            # if isinstance(self.decoder_model, FireflyArchitecture):
-            #    prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
-            #    logger.info(f"Encoded prompt: {prompt_tokens.shape}")
-            # else:
-            #     raise ValueError(f"Unknown 2 model type: {type(self.decoder_model)}")
+            # prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
+            # logger.info(f"Encoded prompt: {prompt_tokens.shape}")
+            if isinstance(self.decoder_model, FireflyArchitecture):
+               prompt_tokens = self.decoder_model.encode(audios, audio_lengths)[0][0]
+               logger.info(f"Encoded prompt: {prompt_tokens.shape}")
+            else:
+                raise ValueError(f"Unknown 2 model type: {type(self.decoder_model)}")
         else:
             prompt_tokens = None
             logger.info("No reference audio provided")
