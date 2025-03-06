@@ -286,8 +286,6 @@ def decode_one_token_ar(
     codebooks.append(a)
 
     for codebook_idx in range(1, model.config.num_codebooks):
-        # Добавляем метку начала шага CUDA графа перед каждым вызовом модели
-        torch.compiler.cudagraph_mark_step_begin()
         
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
@@ -379,6 +377,7 @@ def decode_n_tokens(
             else nullcontext()
         ):
             # Call decode_one_token and clone its output
+            torch.compiler.cudagraph_mark_step_begin()  
             next_token = decode_one_token(
                 model=model,
                 x=cur_token,
