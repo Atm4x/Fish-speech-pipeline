@@ -268,10 +268,10 @@ def decode_one_token_ar(
                 previous_tokens[0] if previous_tokens is not None else None
             ),  # Disable repetition penalty for the token codebook
             **sampling_kwargs_main,
-        )[0].clone()  # Клонируем тензор здесь
+        )[0]
     ]
 
-    hidden_states = x.hidden_states.clone()  # Клонируем hidden_states
+    hidden_states = x.hidden_states
 
     # Cleanup the cache
     for layer in model.fast_layers:
@@ -282,10 +282,13 @@ def decode_one_token_ar(
     model.forward_generate_fast(hidden_states, input_pos)
     a = codebooks[0] - model.tokenizer.semantic_begin_id
     a[a < 0] = 0
-    hidden_states = model.fast_embeddings(a).clone()  # Клонируем результат
-    codebooks.append(a.clone())  # Клонируем перед добавлением
+    hidden_states = model.fast_embeddings(a)
+    codebooks.append(a)
 
     for codebook_idx in range(1, model.config.num_codebooks):
+        # Добавляем метку начала шага CUDA графа перед каждым вызовом модели
+        torch.compiler.cudagraph_mark_step_begin()
+        
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
         )
@@ -298,14 +301,16 @@ def decode_one_token_ar(
                 else None
             ),
             **sampling_kwargs,
-        )[0].clone()  # Клонируем результат
-        hidden_states = model.fast_embeddings(a).clone()  # Клонируем результат
-        codebooks.append(a.clone())  # Клонируем перед добавлением
+        )[0]
+        hidden_states = model.fast_embeddings(a)
+        codebooks.append(a)
 
-    # Используем клонированные тензоры для стекирования
+    # Клонируем каждый тензор в списке перед стекированием
+    codebooks = [cb.clone() for cb in codebooks]
     codebooks = torch.stack(codebooks, dim=0)
     
     return codebooks
+
 
 def decode_one_token_naive(
     model: NaiveTransformer,
@@ -359,12 +364,12 @@ def decode_n_tokens(
     )
 
     for i in tqdm(range(num_new_tokens)):
-        # We need to get windowed repeat penalty
+        # Compute the window and clone it
         win_size = 16
         if i < win_size:
-            window = previous_tokens[:, :win_size]
+            window = previous_tokens[:, :win_size].clone()
         else:
-            window = previous_tokens[:, i - win_size : i]
+            window = previous_tokens[:, i - win_size : i].clone()
 
         with (
             torch.backends.cuda.sdp_kernel(
@@ -372,7 +377,8 @@ def decode_n_tokens(
             )
             if torch.cuda.is_available()
             else nullcontext()
-        ):  # Actually better for Inductor to codegen attention here
+        ):
+            # Call decode_one_token and clone its output
             next_token = decode_one_token(
                 model=model,
                 x=cur_token,
@@ -380,7 +386,7 @@ def decode_n_tokens(
                 previous_tokens=window,
                 semantic_ids=semantic_ids,
                 **sampling_kwargs,
-            )
+            ).clone()
 
         input_pos += 1
         cur_token = next_token.view(1, model.config.num_codebooks + 1, -1)
