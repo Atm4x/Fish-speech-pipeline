@@ -268,10 +268,10 @@ def decode_one_token_ar(
                 previous_tokens[0] if previous_tokens is not None else None
             ),  # Disable repetition penalty for the token codebook
             **sampling_kwargs_main,
-        )[0]
+        )[0].clone()  # Клонируем тензор здесь
     ]
 
-    hidden_states = x.hidden_states
+    hidden_states = x.hidden_states.clone()  # Клонируем hidden_states
 
     # Cleanup the cache
     for layer in model.fast_layers:
@@ -282,13 +282,10 @@ def decode_one_token_ar(
     model.forward_generate_fast(hidden_states, input_pos)
     a = codebooks[0] - model.tokenizer.semantic_begin_id
     a[a < 0] = 0
-    hidden_states = model.fast_embeddings(a)
-    codebooks.append(a)
+    hidden_states = model.fast_embeddings(a).clone()  # Клонируем результат
+    codebooks.append(a.clone())  # Клонируем перед добавлением
 
     for codebook_idx in range(1, model.config.num_codebooks):
-        # Добавляем метку начала шага CUDA графа перед каждым вызовом модели
-        torch.compiler.cudagraph_mark_step_begin()
-        
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
         )
@@ -301,16 +298,14 @@ def decode_one_token_ar(
                 else None
             ),
             **sampling_kwargs,
-        )[0]
-        hidden_states = model.fast_embeddings(a)
-        codebooks.append(a)
+        )[0].clone()  # Клонируем результат
+        hidden_states = model.fast_embeddings(a).clone()  # Клонируем результат
+        codebooks.append(a.clone())  # Клонируем перед добавлением
 
-    # Клонируем каждый тензор в списке перед стекированием
-    codebooks = [cb.clone() for cb in codebooks]
+    # Используем клонированные тензоры для стекирования
     codebooks = torch.stack(codebooks, dim=0)
     
     return codebooks
-
 
 def decode_one_token_naive(
     model: NaiveTransformer,
