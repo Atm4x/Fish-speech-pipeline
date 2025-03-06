@@ -286,6 +286,9 @@ def decode_one_token_ar(
     codebooks.append(a)
 
     for codebook_idx in range(1, model.config.num_codebooks):
+        # Добавляем метку начала шага CUDA графа перед каждым вызовом модели
+        torch.compiler.cudagraph_mark_step_begin()
+        
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
         )
@@ -302,13 +305,10 @@ def decode_one_token_ar(
         hidden_states = model.fast_embeddings(a)
         codebooks.append(a)
 
+    # Клонируем каждый тензор в списке перед стекированием
+    codebooks = [cb.clone() for cb in codebooks]
     codebooks = torch.stack(codebooks, dim=0)
-    # semantic_ids_tensor = torch.tensor(semantic_ids, device=codebooks.device)
-    # codebooks[1:, :] = torch.masked_fill(
-    #     codebooks[1:, :], ~torch.isin(codebooks[:1, :], semantic_ids_tensor), CODEBOOK_PAD_TOKEN_ID
-    # )
-
-    # print(codebooks)
+    
     return codebooks
 
 
