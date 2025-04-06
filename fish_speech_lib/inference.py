@@ -131,8 +131,8 @@ class FishSpeech:
         decoder_model = load_decoder_model(
             checkpoint_path=decoder_checkpoint_path, device=device
         )
-        if precision == torch.half:
-            decoder_model = decoder_model.half()
+        # if precision == torch.half:
+        #     decoder_model = decoder_model.half()
 
         engine = TTSInferenceEngine(
             llama_queue=llama_queue,
