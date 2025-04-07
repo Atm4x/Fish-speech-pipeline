@@ -134,7 +134,7 @@ class FishSpeech:
             # Применение half precision к декодеру, если нужно
             if self.precision == torch.half:
                  logger.info("Applying half precision to decoder model.")
-                 self.decoder_model = self.decoder_model.half()
+                 # self.decoder_model = self.decoder_model.half()
             self.decoder_model.eval() # Убедимся, что модель в режиме eval
             logger.info("Decoder model loaded successfully.")
         except Exception as e:
