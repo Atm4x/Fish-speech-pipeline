@@ -906,41 +906,83 @@ def launch_thread_safe_queue(
 ):
     input_queue = queue.Queue()
     init_event = threading.Event()
+    # Создаем объект потока, но пока не запускаем
+    thread = None
 
     def worker():
-        model, decode_one_token = load_model(
-            checkpoint_path, device, precision, compile=compile
-        )
-        with torch.device(device):
-            model.setup_caches(
-                max_batch_size=1,
-                max_seq_len=model.config.max_seq_len,
-                dtype=next(model.parameters()).dtype,
+        # Загружаем модель внутри потока
+        # Ошибки загрузки будут обработаны внутри потока
+        model = None
+        decode_one_token = None
+        try:
+            model, decode_one_token = load_model(
+                checkpoint_path, device, precision, compile=compile
             )
-        init_event.set()
+            with torch.device(device):
+                model.setup_caches(
+                    max_batch_size=1,
+                    max_seq_len=model.config.max_seq_len,
+                    dtype=next(model.parameters()).dtype,
+                )
+            logger.info(f"LLAMA model worker initialized successfully (compile={compile}).")
+            init_event.set() # Сигнализируем об успешной инициализации
+        except Exception as e:
+            logger.exception(f"Failed to initialize LLAMA model in worker thread (compile={compile}): {e}")
+            init_event.set() # Сигнализируем, даже если ошибка, чтобы основной поток не завис
+            # Можно передать ошибку через очередь или другой механизм, если нужно
+            return # Завершаем поток при ошибке инициализации
 
+        # Основной цикл обработки запросов
         while True:
             item: GenerateRequest | None = input_queue.get()
+
+            # Сигнал для завершения потока
             if item is None:
+                logger.info("LLAMA worker thread received shutdown signal. Exiting.")
                 break
 
-            kwargs = item.request
-            response_queue = item.response_queue
+            # Обработка обычного запроса
+            if isinstance(item, GenerateRequest):
+                kwargs = item.request
+                response_queue = item.response_queue
+                try:
+                    # Передаем compile=compile в generate_long, если он там нужен
+                    # В текущей версии generate_long использует decode_one_token,
+                    # который уже скомпилирован (или нет) при загрузке модели.
+                    # Но добавим kwargs['compile'] на всякий случай, если он понадобится
+                    # внутри generate_long для других целей.
+                    kwargs['compile'] = compile # Передаем текущий режим компиляции
 
-            try:
-                for chunk in generate_long(
-                    model=model, decode_one_token=decode_one_token, **kwargs
-                ):
-                    response_queue.put(
-                        WrappedGenerateResponse(status="success", response=chunk)
-                    )
-            except Exception as e:
-                response_queue.put(WrappedGenerateResponse(status="error", response=e))
+                    for chunk in generate_long(
+                        model=model, decode_one_token=decode_one_token, **kwargs
+                    ):
+                        response_queue.put(
+                            WrappedGenerateResponse(status="success", response=chunk)
+                        )
+                except Exception as e:
+                    logger.exception(f"Error during generation in LLAMA worker thread: {e}")
+                    # Отправляем ошибку обратно
+                    response_queue.put(WrappedGenerateResponse(status="error", response=e))
+            else:
+                logger.warning(f"LLAMA worker received unexpected item type: {type(item)}")
 
-    threading.Thread(target=worker, daemon=True).start()
+        # Очистка ресурсов потока (если необходимо)
+        del model
+        del decode_one_token
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("LLAMA worker thread cleaned up resources.")
+
+    # Создаем и запускаем поток
+    thread = threading.Thread(target=worker, daemon=True, name=f"LLAMAWorker-Compile-{compile}")
+    thread.start()
+
+    # Ждем сигнала об инициализации (или ошибке инициализации)
     init_event.wait()
+    logger.info(f"LLAMA worker thread initialization signal received (compile={compile}).")
 
-    return input_queue
+    # Возвращаем очередь и объект потока
+    return input_queue, thread
 
 
 def launch_thread_safe_queue_agent(
