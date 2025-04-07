@@ -228,6 +228,7 @@ class FishSpeech:
     def close(self):
         """Останавливает фоновый поток и освобождает ресурсы."""
         logger.info("Closing FishSpeech instance...")
+        thread_joined = False
         if self.llama_queue is not None:
             try:
                 logger.debug("Sending shutdown signal to LLAMA worker thread...")
@@ -246,6 +247,17 @@ class FishSpeech:
             except Exception as e:
                  logger.warning(f"Error joining LLAMA worker thread: {e}")
 
+        if thread_joined:
+             logger.info("Resetting torch._dynamo cache after thread join...")
+             try:
+                 torch._dynamo.reset()
+                 logger.info("torch._dynamo cache reset successfully.")
+             except Exception as e:
+                 logger.error(f"Failed to reset torch._dynamo cache after thread join: {e}.")
+        else:
+             logger.warning("Skipping torch._dynamo.reset() because worker thread did not join successfully.")
+
+        
         # Удаляем ссылки на компоненты
         self.engine = None
         self.decoder_model = None
