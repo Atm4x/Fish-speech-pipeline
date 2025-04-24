@@ -1,3 +1,6 @@
+# Copyright 2025 Atm4x (Apache License 2.0)
+# See LICENSE file for details.
+
 from fish_speech_lib.inference import *
 from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG 
 import os

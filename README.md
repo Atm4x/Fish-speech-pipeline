@@ -124,6 +124,25 @@ The library automatically downloads the required models from the Hugging Face Hu
 
 No exceptions found rn, but if you encounter any, please report them.
 
+## License
+
+The code within this repository (`Fish-Speech-Lib`) is licensed under the **Apache License 2.0**. You can find a copy of the license in the `LICENSE` file.
+
+**IMPORTANT NOTE ON MODEL USAGE:**
+The pre-trained models automatically downloaded and utilized by this library originate from the Fish-Speech project and are licensed separately under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
+
+*   **This means the models CANNOT be used for any commercial purposes.**
+*   Please review the full CC BY-NC-SA 4.0 license terms here: [https://creativecommons.org/licenses/by-nc-sa/4.0/](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+## Disclaimer
+
+Users of this library are solely responsible for ensuring their usage complies with all applicable laws and ethical standards. Do not use this tool for illegal or harmful purposes. The developers of this fork are not liable for any misuse.
+
+## Copyright
+
+*   Original Work (Fish-Speech): Copyright (c) 2024 Fish Audio Authors
+*   Modifications in this Fork (Fish-Speech-Lib): Copyright (c) 2025 Atm4x
+
 ## Authors
 [Atm4x](https://github.com/Atm4x)
 

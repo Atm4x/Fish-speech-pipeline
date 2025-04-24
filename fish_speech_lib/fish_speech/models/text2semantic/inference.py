@@ -1,3 +1,16 @@
+# Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
+# Modified by Atm4x in 2025.
+
+# --- In decode_one_token_ar function ---
+# Added .clone() before stacking codebooks.
+# codebooks = [cb.clone() for cb in codebooks]
+# codebooks = torch.stack(codebooks, dim=0)
+
+# --- In decode_n_tokens function ---
+# Added cudagraph mark step begin call.
+# torch.compiler.cudagraph_mark_step_begin()
+# next_token = decode_one_token(...)
+
 import os
 import queue
 import threading

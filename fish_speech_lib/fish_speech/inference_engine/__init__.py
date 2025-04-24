@@ -1,3 +1,11 @@
+# Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
+# Modified by Atm4x in 2025.
+# --- In TTSInferenceEngine.inference method ---
+# Changed streaming output behavior:
+# Instead of yielding segments directly when streaming=True,
+# the code now always collects all segments and concatenates them
+# at the end, returning a single 'final' result.
+
 import gc
 import queue
 from typing import Generator

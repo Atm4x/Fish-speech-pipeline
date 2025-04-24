@@ -1,3 +1,6 @@
+# Copyright 2025 Atm4x (Apache License 2.0)
+# See LICENSE file for details.
+
 import torch
 from fish_speech.models.text2semantic.inference import (
     load_model as load_text2semantic_model,

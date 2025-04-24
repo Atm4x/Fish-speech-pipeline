@@ -1,3 +1,9 @@
+# pyproject.toml for Fish-Speech-Lib
+# Copyright 2025 Atm4x (Apache License 2.0)
+# Based on original pyproject.toml from Fish-Speech (Copyright 2025 Fish Audio Authors)
+# See LICENSE file for details.
+
+
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -11,42 +17,60 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.8"
+keywords = ["tts", "text-to-speech", "voice-cloning", "llama", "speech-synthesis", "fish-speech"] 
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    # "numpy<=1.26.4",
+    # "transformers>=4.45.2",
+    # "datasets==2.18.0",
+    # "lightning>=2.1.0",
+    # "hydra-core>=1.3.2",
+    # "tensorboard>=2.14.1",
+    # "natsort>=8.4.0",
+    # "einops>=0.7.0",
+    # "librosa>=0.10.1",
+    # "rich>=13.5.3",
+    # "gradio>5.0.0",
+    # "wandb>=0.15.11",
+    # "grpcio>=1.58.0",
+    # "kui>=1.6.0",
+    # "uvicorn>=0.30.0",
+    # "loguru>=0.6.0",
+    # "pyrootutils>=1.0.4",
+    # "resampy>=0.4.3",
+    # "zstandard>=0.22.0",
+    # "pydub",
+    # "pyaudio",
+    # "faster-whisper",
+    # "ormsgpack",
+    # "tiktoken>=0.8.0",
+    # "pydantic==2.9.2",
+    # "cachetools",
+    # "huggingface-hub",
+    # "loralib",
+    # "vector_quantize_pytorch==1.14.24",
     "numpy<=1.26.4",
-    "transformers>=4.45.2",
-    "datasets==2.18.0",
-    "lightning>=2.1.0",
-    "hydra-core>=1.3.2",
-    "tensorboard>=2.14.1",
-    "natsort>=8.4.0",
-    "einops>=0.7.0",
-    "librosa>=0.10.1",
-    "rich>=13.5.3",
-    "gradio>5.0.0",
-    "wandb>=0.15.11",
-    "grpcio>=1.58.0",
-    "kui>=1.6.0",
-    "uvicorn>=0.30.0",
-    "loguru>=0.6.0",
-    "pyrootutils>=1.0.4",
-    "resampy>=0.4.3",
-    "zstandard>=0.22.0",
-    "pydub",
-    "pyaudio",
-    "faster-whisper",
-    "ormsgpack",
-    "tiktoken>=0.8.0",
-    "pydantic==2.9.2",
-    "cachetools",
-    "huggingface-hub",
-    "loralib",
-    "vector_quantize_pytorch==1.14.24",
+    "torch>=1.13.0", # Укажи минимально необходимую версию PyTorch
+    "torchaudio>=0.13.0", # Укажи минимально необходимую версию Torchaudio
+    "transformers>=4.45.2", # Для Tokenizer и LlamaModelArgs
+    "tiktoken>=0.8.0", # Для Tokenizer
+    "loguru>=0.6.0", # Используется в inference_engine
+    "huggingface-hub", # Для скачивания моделей
+    "einops>=0.7.0", # Используется в llama.py
+    "pydantic==2.9.2", # Используется в schema.py
+    "vector_quantize_pytorch==1.14.24", # Используется в fsq.py
+    "loralib", # Используется в lora.py (если ты сохранил эту функциональность)
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/Atm4x/Fish-speech-pipeline"
+"Repository" = "https://github.com/Atm4x/Fish-speech-pipeline" 
+"Bug Tracker" = "https://github.com/Atm4x/Fish-speech-pipeline/issues" 
+"Original Project" = "https://github.com/fishaudio/fish-speech"
 
 [project.scripts]
 fish_speech_inference = "fish_speech_pipe.inference:main"

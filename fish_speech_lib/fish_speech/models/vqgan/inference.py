@@ -1,3 +1,11 @@
+# Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
+# Modified by Atm4x in 2025.
+# --- In load_model function ---
+# - Removed Hydra dependency (initialize, compose).
+# + # Loads VQGAN config directly from fish_speech_lib.config.FIREFLY_GAN_VQ_CONFIG.
+# + from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG # Added import
+# + model = instantiate(FIREFLY_GAN_VQ_CONFIG) # Changed instantiation
+
 from pathlib import Path
 
 import click

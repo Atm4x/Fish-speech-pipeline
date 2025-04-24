@@ -1,3 +1,6 @@
+# Copyright 2025 Atm4x (Apache License 2.0)
+# See LICENSE file for details.
+
 import torch
 from pathlib import Path
 from typing import Union, Optional

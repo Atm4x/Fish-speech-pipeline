@@ -1,3 +1,7 @@
+# Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
+# Modified by Atm4x in 2025.
+# See LICENSE file for details.
+
 from lightning.pytorch.utilities import rank_zero_only
 
 from fish_speech_lib.fish_speech.utils import logger as log

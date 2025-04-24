@@ -12,7 +12,9 @@ from .firefly import ConvNeXtBlock, FishConvNet, FishTransConvNet
 @dataclass
 class FSQResult:
     z: torch.Tensor
-    codes: torch.Tensor
+    codes: torch.Tensor# Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
+# Modified by Atm4x in 2025.
+# See LICENSE file for details.
     latents: torch.Tensor
 
 
