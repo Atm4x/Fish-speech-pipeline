@@ -20,7 +20,7 @@ You must have **CUDA or MPS** support for your GPU (MPS is not fully tested yet)
 
 2) Then, install Fish-Speech-Lib using pip install:
 ```
-pip install git+https://github.com/Atm4x/Fish-speech-pipeline#egg=fish_speech_lib
+pip install fish_speech_lib
 ```
 
 3) Finally, create a `.project-root` file in the root directory of your project.
