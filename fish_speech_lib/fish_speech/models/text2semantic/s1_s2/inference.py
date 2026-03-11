@@ -744,7 +744,7 @@ def launch_thread_safe_queue(
         with torch.device(device):
             model.setup_caches(
                 max_batch_size=1,
-                max_seq_len=512,
+                max_seq_len=1024,
                 dtype=next(model.parameters()).dtype,
             )
         init_event.set()
