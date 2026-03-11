@@ -3,7 +3,6 @@
 # Based on original pyproject.toml from Fish-Speech (Copyright 2025 Fish Audio Authors)
 # See LICENSE file for details.
 
-
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
@@ -17,7 +16,8 @@ authors = [
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+# Изменено: S2 и новые библиотеки требуют минимум Python 3.10
+requires-python = ">=3.10"
 keywords = ["tts", "text-to-speech", "voice-cloning", "llama", "speech-synthesis", "fish-speech", "Atm4x", "fish audio"] 
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -25,6 +25,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "torch==2.7.1",
+    "torchaudio==2.7.1",
     "numpy<=1.26.4",
     "natsort>=8.4.0",
     "transformers>=4.45.2",
@@ -53,7 +55,22 @@ dependencies = [
     "huggingface-hub",
     "loralib",
     "vector_quantize_pytorch==1.14.24",
+    # Добавлены зависимости S2
+    "descript-audio-codec",
+    "descript-audiotools",
+    "safetensors",
+    "einx[torch]>=0.2.2"
 ]
+
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
 
 [project.urls]
 "Homepage" = "https://github.com/Atm4x/Fish-speech-pipeline"
@@ -64,7 +81,7 @@ dependencies = [
 [project.scripts]
 fish_speech_inference = "fish_speech_pipe.inference:main"
 
-
 [tool.setuptools.packages.find]
-where = ["."]  #  Искать пакеты в текущей директории
-include = ["fish_speech_lib*"]  # Include your package(s)
+where = ["."]
+include = ["fish_speech_lib*"]
+

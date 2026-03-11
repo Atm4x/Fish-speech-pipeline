@@ -22,7 +22,7 @@ FIREFLY_GAN_VQ_CONFIG = {
     "head": {
         "_target_": "fish_speech_lib.fish_speech.models.vqgan.modules.firefly.HiFiGANGenerator",
         "hop_length": 512,
-        "upsample_rates": [8, 8, 2, 2, 2],  # aka. strides
+        "upsample_rates": [8, 8, 2, 2, 2],
         "upsample_kernel_sizes": [16, 16, 4, 4, 4],
         "resblock_kernel_sizes": [3, 7, 11],
         "resblock_dilation_sizes": [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
@@ -39,4 +39,24 @@ FIREFLY_GAN_VQ_CONFIG = {
         "levels": [8, 5, 5, 5],
         "downsample_factor": [2, 2],
     },
+}
+
+MODDED_DAC_VQ_CONFIG = {
+    "_target_": "fish_speech_lib.fish_speech.models.dac.modded_dac.DAC",
+    "encoder_dim": 64,
+    "encoder_rates": [2, 4, 8, 8],
+    "decoder_dim": 1536,
+    "decoder_rates": [8, 8, 4, 2],
+    "sample_rate": 44100,
+    "causal": True,
+    "quantizer": {
+        "_target_": "fish_speech_lib.fish_speech.models.dac.rvq.DownsampleResidualVectorQuantize",
+        "input_dim": 1024,
+        "n_codebooks": 9,
+        "codebook_dim": 8,
+        "quantizer_dropout": 0.5,
+        "codebook_size": 1024,
+        "semantic_codebook_size": 4096,
+        "downsample_factor": [2, 2],
+    }
 }
