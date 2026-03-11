@@ -275,15 +275,16 @@ def generate(
         model.parameters()
     ).dtype  # model weight dtype (bfloat16), NOT prompt dtype (int32)
 
-    # Critical fix: Only set up cache on first run or when necessary
-    if not hasattr(model, "_cache_setup_done") or not model._cache_setup_done:
-        with torch.device(device):
-            model.setup_caches(
-                max_batch_size=1,  # Fixed to 1, avoid dynamic changes
-                max_seq_len=model.config.max_seq_len,
-                dtype=next(model.parameters()).dtype,
-            )
-        model._cache_setup_done = True
+    actual_max_len = min(model.config.max_seq_len, T + max_new_tokens + 128)
+    
+    # Critical fix: Set up cache based on ACTUAL needed length
+    with torch.device(device):
+        model.setup_caches(
+            max_batch_size=1,
+            max_seq_len=actual_max_len, # <--- ВЫДЕЛЯЕТ ПАМЯТЬ ТОЛЬКО ПОД НУЖНЫЙ РАЗМЕР
+            dtype=next(model.parameters()).dtype,
+        )
+    model._cache_setup_done = True
 
     codebook_dim = 1 + model.config.num_codebooks
 
@@ -743,7 +744,7 @@ def launch_thread_safe_queue(
         with torch.device(device):
             model.setup_caches(
                 max_batch_size=1,
-                max_seq_len=model.config.max_seq_len,
+                max_seq_len=512,
                 dtype=next(model.parameters()).dtype,
             )
         init_event.set()

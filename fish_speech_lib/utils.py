@@ -44,9 +44,11 @@ def load_models(
     # each time the length changes.  We have key/value cache,
     # the actual sequence length will be at most max_length in the config.
     with torch.device(device):
+        # Инициализируем минимальным размером (например 1024), 
+        # при генерации он сам расширится до нужного, если потребуется.
         llama_model.setup_caches(
             max_batch_size=1,
-            max_seq_len=llama_model.config.max_seq_len,
+            max_seq_len=1024, 
             dtype=next(llama_model.parameters()).dtype,
         )
 
