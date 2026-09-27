@@ -6,7 +6,6 @@
 # the code now always collects all segments and concatenates them
 # at the end, returning a single 'final' result.
 
-import gc
 import queue
 from typing import Generator
 
@@ -20,11 +19,12 @@ from fish_speech_lib.fish_speech.inference_engine.vq_manager import VQManager
 from fish_speech_lib.fish_speech.models.text2semantic.inference import (
     GenerateRequest,
     GenerateResponse,
+    TextSemanticWorker,
     WrappedGenerateResponse,
 )
 from fish_speech_lib.fish_speech.models.vqgan.modules.firefly import FireflyArchitecture
 # from fish_speech.text.chn_text_norm.text import Text as ChnNormedText
-from fish_speech_lib.fish_speech.utils import autocast_exclude_mps, set_seed
+from fish_speech_lib.fish_speech.utils import autocast_exclude_mps
 from fish_speech_lib.fish_speech.utils.schema import ServeTTSRequest
 
 
@@ -32,7 +32,7 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
 
     def __init__(
         self,
-        llama_queue: queue.Queue,
+        llama_worker: TextSemanticWorker,
         decoder_model: FireflyArchitecture,
         precision: torch.dtype,
         compile: bool,
@@ -40,7 +40,7 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
 
         super().__init__()
 
-        self.llama_queue = llama_queue
+        self.llama_worker = llama_worker
         self.decoder_model = decoder_model
         self.precision = precision
         self.compile = compile
@@ -64,11 +64,6 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
             prompt_tokens, prompt_texts = self.load_by_hash(
                 req.references, req.use_memory_cache
             )
-
-        # Set the random seed if provided
-        if req.seed is not None:
-            set_seed(req.seed)
-            logger.warning(f"set seed: {req.seed}")
 
         # Get the symbolic tokens from the LLAMA model
         response_queue = self.send_Llama_request(req, prompt_tokens, prompt_texts)
@@ -128,11 +123,6 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
                 break
         # endregion
 
-        # Clean up the memory
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            gc.collect()
-
         # Edge case: no audio generated
         if len(segments) == 0:
             yield InferenceResult(
@@ -160,7 +150,6 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
 
         # Prepare the request
         request = dict(
-            device=self.decoder_model.device,
             max_new_tokens=req.max_new_tokens,
             text=(
                 req.text
@@ -176,13 +165,14 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
             max_length=4096,
             prompt_tokens=prompt_tokens,
             prompt_text=prompt_texts,
+            seed=req.seed,
         )
 
         # Create a queue to get the response
         response_queue = queue.Queue()
 
         # Send the request to the LLAMA model
-        self.llama_queue.put(
+        self.llama_worker.submit(
             GenerateRequest(
                 request=request,
                 response_queue=response_queue,
@@ -190,6 +180,10 @@ class TTSInferenceEngine(ReferenceLoader, VQManager):
         )
 
         return response_queue
+
+    def close(self) -> None:
+        self.llama_worker.close()
+
 
     def get_audio_segment(self, result: GenerateResponse) -> np.ndarray:
         """

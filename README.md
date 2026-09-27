@@ -23,13 +23,13 @@ You must have **CUDA or MPS** support for your GPU (MPS is not fully tested yet)
 pip install fish_speech_lib
 ```
 
-3) Finally, create a `.project-root` file in the root directory of your project.
+When using the source tree directly instead of installing the package, add the directory that contains `fish_speech_lib` to `PYTHONPATH`/`sys.path`. No `.project-root` marker is required.
 
 ## Usage
 
 Fish-Speech-Lib provides a class called `FishSpeech`. There are a few parameters that are optional:
 
-`device` - Device to run on: "cuda" (default), "cpu", or "mps"
+`device` - Device to run on: "cuda"/"cuda:0" (default GPU), an explicit GPU such as "cuda:1", "cpu", or "mps"
 
 `half` - Whether to use half-precision (FP16) (default is False)
 

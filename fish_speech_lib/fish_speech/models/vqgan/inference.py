@@ -9,18 +9,16 @@
 from pathlib import Path
 
 import click
-import hydra
 import numpy as np
-import pyrootutils
 import soundfile as sf
 import torch
 import torchaudio
 from loguru import logger
 from omegaconf import OmegaConf
 from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG
+from fish_speech_lib.fish_speech.device import resolve_device
 from hydra.utils import instantiate
 
-pyrootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
 from fish_speech_lib.fish_speech.utils.file import AUDIO_EXTENSIONS
 
@@ -29,7 +27,7 @@ OmegaConf.register_new_resolver("eval", eval)
 
 
 def load_model(checkpoint_path, device="cuda"):
-    
+    device = resolve_device(device)
     model = instantiate(FIREFLY_GAN_VQ_CONFIG)
     state_dict = torch.load(
         checkpoint_path, map_location=device, mmap=True, weights_only=True

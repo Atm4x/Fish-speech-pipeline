@@ -40,7 +40,6 @@ dependencies = [
     "kui>=1.6.0",
     "uvicorn>=0.30.0",
     "loguru>=0.6.0",
-    "pyrootutils>=1.0.4",
     "resampy>=0.4.3",
     "zstandard>=0.22.0",
     "pydub",

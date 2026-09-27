@@ -136,12 +136,23 @@ class DualARModelArgs(BaseModelArgs):
 
 class KVCache(nn.Module):
     def __init__(
-        self, max_batch_size, max_seq_len, n_heads, head_dim, dtype=torch.bfloat16
+        self,
+        max_batch_size,
+        max_seq_len,
+        n_heads,
+        head_dim,
+        dtype=torch.bfloat16,
+        *,
+        device: torch.device | str,
     ):
         super().__init__()
         cache_shape = (max_batch_size, n_heads, max_seq_len, head_dim)
-        self.register_buffer("k_cache", torch.zeros(cache_shape, dtype=dtype))
-        self.register_buffer("v_cache", torch.zeros(cache_shape, dtype=dtype))
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device=device)
+        )
 
     def update(self, input_pos, k_val, v_val):
         # input_pos: [S], k_val: [B, H, S, D]
@@ -236,6 +247,7 @@ class BaseTransformer(nn.Module):
         if self.max_seq_len >= max_seq_len and self.max_batch_size >= max_batch_size:
             return
 
+        device = next(self.parameters()).device
         head_dim = self.config.dim // self.config.n_head
         max_seq_len = find_multiple(max_seq_len, 8)
         self.max_seq_len = max_seq_len
@@ -248,6 +260,7 @@ class BaseTransformer(nn.Module):
                 self.config.n_local_heads,
                 head_dim,
                 dtype=dtype,
+                device=device,
             )
 
     def embed(self, inp: Tensor, share_codebook_embeddings=True) -> Tensor:
@@ -578,6 +591,7 @@ class DualARTransformer(BaseTransformer):
     ):
         super().setup_caches(max_batch_size, max_seq_len, dtype)
 
+        device = next(self.parameters()).device
         head_dim = self.config.fast_dim // self.config.fast_n_head
 
         # Fast transformer
@@ -589,6 +603,7 @@ class DualARTransformer(BaseTransformer):
                 self.config.fast_n_local_heads,
                 head_dim,
                 dtype=dtype,
+                device=device,
             )
 
     def forward(

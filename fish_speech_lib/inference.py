@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union, Optional
 import numpy as np
 
+from .fish_speech.device import resolve_device
 from .fish_speech.inference_engine import TTSInferenceEngine
 from .fish_speech.models.text2semantic.inference import launch_thread_safe_queue
 from .fish_speech.models.vqgan.inference import load_model as load_decoder_model
@@ -108,14 +109,11 @@ class FishSpeech:
         self._download_models()
 
 
-    def _resolve_device(self, device: str) -> str:
-        if device == "cuda" and not torch.cuda.is_available():
-            print("CUDA not available, using CPU.")
-            return "cpu"
-        if device == "mps" and not torch.backends.mps.is_available():
-            print("MPS not available, using CPU.")
-            return "cpu"
-        return device
+    def _resolve_device(self, device: str | torch.device) -> torch.device:
+        resolved = resolve_device(device, fallback_to_cpu=True)
+        if resolved.type == "cpu" and torch.device(device).type != "cpu":
+            print(f"{torch.device(device).type.upper()} not available, using CPU.")
+        return resolved
 
     def _initialize_engine(
         self,
@@ -126,34 +124,60 @@ class FishSpeech:
         compile_model,
     ):
         """Инициализирует и возвращает TTSInferenceEngine."""
-        llama_queue = launch_thread_safe_queue(
+        llama_worker = launch_thread_safe_queue(
             checkpoint_path=llama_checkpoint_path,
             device=device,
             precision=precision,
             compile=compile_model,
         )
-        decoder_model = load_decoder_model(
-            checkpoint_path=decoder_checkpoint_path, device=device
-        )
-        # if precision == torch.half:
-        #     decoder_model = decoder_model.half()
-
-        engine = TTSInferenceEngine(
-            llama_queue=llama_queue,
-            decoder_model=decoder_model,
-            precision=precision,
-            compile=compile_model,
-        )
-
-        # "Прогрев" модели.  Делаем это *один раз* при инициализации.
-        engine.inference(
-            ServeTTSRequest(
-                text="test",
-                references=[],
-                max_new_tokens=100,  # Небольшое значение для прогрева
+        engine = None
+        try:
+            decoder_model = load_decoder_model(
+                checkpoint_path=decoder_checkpoint_path, device=device
             )
-        )
-        return engine
+            engine = TTSInferenceEngine(
+                llama_worker=llama_worker,
+                decoder_model=decoder_model,
+                precision=precision,
+                compile=compile_model,
+            )
+
+            if compile_model:
+                for result in engine.inference(
+                    ServeTTSRequest(
+                        text="test",
+                        references=[],
+                        max_new_tokens=100,
+                    )
+                ):
+                    if result.code == "error":
+                        error = result.error or RuntimeError(
+                            "Unknown Fish Speech compilation warmup error"
+                        )
+                        raise RuntimeError(
+                            "Fish Speech compilation warmup failed"
+                        ) from error
+
+            return engine
+        except BaseException:
+            if engine is not None:
+                engine.close()
+            else:
+                llama_worker.close()
+            raise
+
+    def close(self) -> None:
+        engine = getattr(self, "engine", None)
+        if engine is None:
+            return
+        engine.close()
+        self.engine = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
     @torch.no_grad()
     def __call__(
@@ -190,6 +214,9 @@ class FishSpeech:
         Returns:
             (sample_rate, waveform) - кортеж с частотой дискретизации и numpy-массивом аудио.
         """
+
+        if self.engine is None:
+            raise RuntimeError("FishSpeech instance is closed")
 
         # Создаем ServeTTSRequest
         if reference_audio:

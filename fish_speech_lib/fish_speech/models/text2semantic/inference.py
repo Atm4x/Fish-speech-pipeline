@@ -6,11 +6,6 @@
 # codebooks = [cb.clone() for cb in codebooks]
 # codebooks = torch.stack(codebooks, dim=0)
 
-# --- In decode_n_tokens function ---
-# Added cudagraph mark step begin call.
-# torch.compiler.cudagraph_mark_step_begin()
-# next_token = decode_one_token(...)
-
 import os
 import queue
 import threading
@@ -23,12 +18,11 @@ from typing import Literal, Optional, Tuple, Union
 import click
 import numpy as np
 import torch
-import torch._dynamo.config
-import torch._inductor.config
 from loguru import logger
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+from fish_speech_lib.fish_speech.device import module_device, resolve_device
 from fish_speech_lib.fish_speech.conversation import (
     CODEBOOK_PAD_TOKEN_ID,
     Conversation,
@@ -37,16 +31,10 @@ from fish_speech_lib.fish_speech.conversation import (
     VQPart,
 )
 from fish_speech_lib.fish_speech.models.text2semantic.llama import BaseModelArgs
+from fish_speech_lib.fish_speech.models.text2semantic.sampling import SamplingRng
+from fish_speech_lib.fish_speech.models.text2semantic.compile_runtime import compile_on_device
 from fish_speech_lib.fish_speech.text import clean_text, split_text
 from fish_speech_lib.fish_speech.tokenizer import IM_END_TOKEN, FishTokenizer
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-torch._inductor.config.coordinate_descent_tuning = True
-torch._inductor.config.triton.unique_kernel_names = True
-
-if hasattr(torch._inductor.config, "fx_graph_cache"):
-    # Experimental feature to reduce compilation times, will be on by default in future
-    torch._inductor.config.fx_graph_cache = True
 
 
 from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -59,10 +47,10 @@ from fish_speech_lib.fish_speech.models.text2semantic.llama import (
 
 
 def multinomial_sample_one_no_sync(
-    probs_sort,
-):  # Does multinomial sampling without a cuda synchronization
-    q = torch.empty_like(probs_sort).exponential_(1)
-    return torch.argmax(probs_sort / q, dim=-1, keepdim=True).to(dtype=torch.int)
+    probs_sort: torch.Tensor, *, noise: torch.Tensor
+) -> torch.Tensor:
+    """Sample from probabilities using caller-owned request-local noise."""
+    return torch.argmax(probs_sort / noise, dim=-1, keepdim=True).to(dtype=torch.int)
 
 
 def logits_to_probs(
@@ -98,10 +86,10 @@ def logits_to_probs(
 
 
 def multinomial_sample_one_no_sync_agent(
-    probs_sort,
-):  # Does multinomial sampling without a cuda synchronization
-    q = torch.empty_like(probs_sort).exponential_(1)
-    return torch.argmax(probs_sort / q, dim=-1, keepdim=True).to(dtype=torch.int)
+    probs_sort: torch.Tensor, *, noise: torch.Tensor
+) -> torch.Tensor:
+    """Batched sampling using caller-owned request-local noise."""
+    return torch.argmax(probs_sort / noise, dim=-1, keepdim=True).to(dtype=torch.int)
 
 
 def logits_to_probs_agent(
@@ -139,58 +127,170 @@ def logits_to_probs_agent(
 def sample(
     logits,
     previous_tokens: Optional[torch.Tensor] = None,
+    *,
+    noise: torch.Tensor,
     **sampling_kwargs,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     probs = logits_to_probs(
         logits=logits[0, -1], previous_tokens=previous_tokens, **sampling_kwargs
     )
-    idx_next = multinomial_sample_one_no_sync(probs)
+    idx_next = multinomial_sample_one_no_sync(probs, noise=noise)
     return idx_next, probs
 
 
 def sample_agent(
     logits,
     previous_tokens: Optional[torch.Tensor] = None,
+    *,
+    noise: torch.Tensor,
     **sampling_kwargs,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     probs = logits_to_probs_agent(
         logits=logits[:, -1], previous_tokens=previous_tokens, **sampling_kwargs
     )
-    idx_next = multinomial_sample_one_no_sync_agent(probs)
+    idx_next = multinomial_sample_one_no_sync_agent(probs, noise=noise)
     return idx_next, probs
 
 
-def decode_one_token_ar_agent(
+
+def _sampling_parts(
+    rng: SamplingRng,
+    model: BaseTransformer,
+    shapes: list[tuple[int, ...]],
+) -> tuple[torch.Tensor, ...]:
+    parameter = next(model.parameters())
+    return rng.exponential_parts(
+        shapes,
+        device=parameter.device,
+        dtype=parameter.dtype,
+    )
+
+
+def _sampling_noise_ar(
+    model: DualARTransformer, x: torch.Tensor, rng: SamplingRng
+) -> tuple[torch.Tensor, ...]:
+    return _sampling_parts(
+        rng,
+        model,
+        [
+            (model.config.vocab_size,),
+            *((model.config.codebook_size,) for _ in range(1, model.config.num_codebooks)),
+        ],
+    )
+
+
+def _sampling_noise_naive(
+    model: NaiveTransformer, x: torch.Tensor, rng: SamplingRng
+) -> tuple[torch.Tensor, ...]:
+    return _sampling_parts(
+        rng,
+        model,
+        [
+            (model.config.vocab_size,),
+            *((model.config.codebook_size,) for _ in range(model.config.num_codebooks)),
+        ],
+    )
+
+
+def _sampling_noise_ar_agent(
+    model: DualARTransformer, x: torch.Tensor, rng: SamplingRng
+) -> tuple[torch.Tensor, ...]:
+    batch_size = x.shape[0]
+    return _sampling_parts(
+        rng,
+        model,
+        [
+            (batch_size, model.config.vocab_size),
+            *((batch_size, model.config.codebook_size) for _ in range(model.config.num_codebooks)),
+        ],
+    )
+
+
+def _sampling_noise_naive_agent(
+    model: NaiveTransformer, x: torch.Tensor, rng: SamplingRng
+) -> tuple[torch.Tensor, ...]:
+    batch_size = x.shape[0]
+    return _sampling_parts(
+        rng,
+        model,
+        [
+            (model.config.vocab_size,),
+            *((batch_size, model.config.codebook_size) for _ in range(model.config.num_codebooks)),
+        ],
+    )
+
+def _make_decode_callable(compiled_impl, noise_factory):
+    def decode_one_token(
+        model,
+        x,
+        input_pos,
+        semantic_ids,
+        previous_tokens=None,
+        *,
+        rng: SamplingRng,
+        temperature: torch.Tensor = 1.0,
+        top_p: torch.Tensor = 1.0,
+        repetition_penalty: torch.Tensor = 1.0,
+    ):
+        return compiled_impl(
+            model,
+            x,
+            input_pos,
+            semantic_ids,
+            previous_tokens,
+            sampling_noise=noise_factory(model, x, rng),
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+        )
+
+    decode_one_token._fish_compiled = True
+    decode_one_token._fish_compile_device = getattr(
+        compiled_impl, "_fish_compile_device", None
+    )
+    return decode_one_token
+
+
+def _decode_one_token_ar_agent_impl(
     model: DualARTransformer,
     x: torch.Tensor,
     input_pos: torch.Tensor,
     semantic_ids: list,
     previous_tokens: torch.Tensor = None,
-    **sampling_kwargs,
+    *,
+    sampling_noise: tuple[torch.Tensor, ...],
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
 ) -> torch.Tensor:
-    # print(x, input_pos)
     x = model.forward_generate(x, input_pos)
-    logits = x.logits  # [:, -1:]
-    hidden_states = x.hidden_states  # [:, -1:]
+    logits = x.logits
+    hidden_states = x.hidden_states
 
-    sampling_kwargs_main = sampling_kwargs.copy()
-    sampling_kwargs_main["temperature"] = 0.1
-    sampling_kwargs_main["top_p"] = 0.1
-    sampling_kwargs_main["repetition_penalty"] = 1.0
+    sampling_kwargs_main = {
+        "temperature": 0.1,
+        "top_p": 0.1,
+        "repetition_penalty": 1.0,
+    }
 
     codebooks = [
         sample_agent(
             logits,
-            previous_tokens=None,  # Disable repetition penalty for the token codebook
+            previous_tokens=None,
+            noise=sampling_noise[0],
             **sampling_kwargs_main,
         )[0]
     ]
 
-    # Cleanup the cache
     for layer in model.fast_layers:
         layer.attention.kv_cache.k_cache.fill_(0)
         layer.attention.kv_cache.v_cache.fill_(0)
 
+    sampling_kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "repetition_penalty": repetition_penalty,
+    }
     for codebook_idx in range(model.config.num_codebooks):
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
@@ -203,6 +303,7 @@ def decode_one_token_ar_agent(
                 if previous_tokens is not None
                 else None
             ),
+            noise=sampling_noise[codebook_idx + 1],
             **sampling_kwargs,
         )[0]
         hidden_states = model.fast_embeddings(a)
@@ -215,24 +316,58 @@ def decode_one_token_ar_agent(
         ~torch.isin(codebooks[:, :1, :], semantic_ids_tensor),
         CODEBOOK_PAD_TOKEN_ID,
     )
-
     return codebooks
 
 
-def decode_one_token_naive_agent(
+def decode_one_token_ar_agent(
+    model: DualARTransformer,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    semantic_ids: list,
+    previous_tokens: torch.Tensor = None,
+    *,
+    rng: SamplingRng,
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
+) -> torch.Tensor:
+    return _decode_one_token_ar_agent_impl(
+        model,
+        x,
+        input_pos,
+        semantic_ids,
+        previous_tokens,
+        sampling_noise=_sampling_noise_ar_agent(model, x, rng),
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+    )
+
+
+def _decode_one_token_naive_agent_impl(
     model: NaiveTransformer,
     x: torch.Tensor,
     input_pos: torch.Tensor,
     semantic_ids: list,
     previous_tokens: torch.Tensor = None,
-    **sampling_kwargs,
+    *,
+    sampling_noise: tuple[torch.Tensor, ...],
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
 ) -> torch.Tensor:
-    x = model.forward_generate(x, input_pos)
+    result = model.forward_generate(x, input_pos)
+    sampling_kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "repetition_penalty": repetition_penalty,
+    }
 
     codebooks = [
         sample(
-            x.token_logits,
-            previous_tokens=None,  # Disable repetition penalty for the token codebook
+            result.token_logits,
+            previous_tokens=None,
+            noise=sampling_noise[0],
             **sampling_kwargs,
         )[0]
     ]
@@ -240,10 +375,11 @@ def decode_one_token_naive_agent(
     for i in range(model.config.num_codebooks):
         codebooks.append(
             sample_agent(
-                x.codebook_logits[:, :, i],
+                result.codebook_logits[:, :, i],
                 previous_tokens=(
                     previous_tokens[:, i + 1] if previous_tokens is not None else None
                 ),
+                noise=sampling_noise[i + 1],
                 **sampling_kwargs,
             )[0]
         )
@@ -255,38 +391,65 @@ def decode_one_token_naive_agent(
         ~torch.isin(codebooks[:, :1, :], semantic_ids_tensor),
         CODEBOOK_PAD_TOKEN_ID,
     )
-
     return codebooks
 
 
-def decode_one_token_ar(
+def decode_one_token_naive_agent(
+    model: NaiveTransformer,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    semantic_ids: list,
+    previous_tokens: torch.Tensor = None,
+    *,
+    rng: SamplingRng,
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
+) -> torch.Tensor:
+    return _decode_one_token_naive_agent_impl(
+        model,
+        x,
+        input_pos,
+        semantic_ids,
+        previous_tokens,
+        sampling_noise=_sampling_noise_naive_agent(model, x, rng),
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+    )
+
+
+def _decode_one_token_ar_impl(
     model: DualARTransformer,
     x: torch.Tensor,
     input_pos: torch.Tensor,
     semantic_ids: list,
     previous_tokens: torch.Tensor = None,
-    **sampling_kwargs,
+    *,
+    sampling_noise: tuple[torch.Tensor, ...],
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
 ) -> torch.Tensor:
-    x = model.forward_generate(x, input_pos)
-
-    sampling_kwargs_main = sampling_kwargs.copy()
-    # sampling_kwargs_main["temperature"] = 0.1
-    # sampling_kwargs_main["top_p"] = 0.1
-    # sampling_kwargs_main["repetition_penalty"] = 1.0
+    result = model.forward_generate(x, input_pos)
+    sampling_kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "repetition_penalty": repetition_penalty,
+    }
 
     codebooks = [
         sample(
-            x.logits,
+            result.logits,
             previous_tokens=(
                 previous_tokens[0] if previous_tokens is not None else None
-            ),  # Disable repetition penalty for the token codebook
-            **sampling_kwargs_main,
+            ),
+            noise=sampling_noise[0],
+            **sampling_kwargs,
         )[0]
     ]
+    hidden_states = result.hidden_states
 
-    hidden_states = x.hidden_states
-
-    # Cleanup the cache
     for layer in model.fast_layers:
         layer.attention.kv_cache.k_cache.fill_(0)
         layer.attention.kv_cache.v_cache.fill_(0)
@@ -299,7 +462,6 @@ def decode_one_token_ar(
     codebooks.append(a)
 
     for codebook_idx in range(1, model.config.num_codebooks):
-        
         input_pos = torch.tensor(
             [codebook_idx], device=hidden_states.device, dtype=torch.long
         )
@@ -311,36 +473,70 @@ def decode_one_token_ar(
                 if previous_tokens is not None
                 else None
             ),
+            noise=sampling_noise[codebook_idx],
             **sampling_kwargs,
         )[0]
         hidden_states = model.fast_embeddings(a)
         codebooks.append(a)
 
-    # Клонируем каждый тензор в списке перед стекированием
-    codebooks = [cb.clone() for cb in codebooks]
-    codebooks = torch.stack(codebooks, dim=0)
-    
-    return codebooks
+    codebooks = [codebook.clone() for codebook in codebooks]
+    return torch.stack(codebooks, dim=0)
 
 
-def decode_one_token_naive(
+def decode_one_token_ar(
+    model: DualARTransformer,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    semantic_ids: list,
+    previous_tokens: torch.Tensor = None,
+    *,
+    rng: SamplingRng,
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
+) -> torch.Tensor:
+    return _decode_one_token_ar_impl(
+        model,
+        x,
+        input_pos,
+        semantic_ids,
+        previous_tokens,
+        sampling_noise=_sampling_noise_ar(model, x, rng),
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+    )
+
+
+def _decode_one_token_naive_impl(
     model: NaiveTransformer,
     x: torch.Tensor,
     input_pos: torch.Tensor,
+    semantic_ids: list,
     previous_tokens: torch.Tensor = None,
-    **sampling_kwargs,
+    *,
+    sampling_noise: tuple[torch.Tensor, ...],
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
 ) -> torch.Tensor:
-    x = model.forward_generate(x, input_pos)
-
-    sampling_kwargs_main = sampling_kwargs.copy()
-    sampling_kwargs_main["temperature"] = 0.1
-    sampling_kwargs_main["top_p"] = 0.1
-    sampling_kwargs_main["repetition_penalty"] = 1.0
+    result = model.forward_generate(x, input_pos)
+    sampling_kwargs_main = {
+        "temperature": 0.1,
+        "top_p": 0.1,
+        "repetition_penalty": 1.0,
+    }
+    sampling_kwargs = {
+        "temperature": temperature,
+        "top_p": top_p,
+        "repetition_penalty": repetition_penalty,
+    }
 
     codebooks = [
         sample(
-            x.logits,
-            previous_tokens=None,  # Disable repetition penalty for the token codebook
+            result.token_logits,
+            previous_tokens=None,
+            noise=sampling_noise[0],
             **sampling_kwargs_main,
         )[0]
     ]
@@ -348,15 +544,40 @@ def decode_one_token_naive(
     for i in range(model.config.num_codebooks):
         codebooks.append(
             sample(
-                x.codebook_logits[:, :, i],
+                result.codebook_logits[:, :, i],
                 previous_tokens=(
                     previous_tokens[i + 1] if previous_tokens is not None else None
                 ),
+                noise=sampling_noise[i + 1],
                 **sampling_kwargs,
             )[0]
         )
-
     return torch.stack(codebooks, dim=0)
+
+
+def decode_one_token_naive(
+    model: NaiveTransformer,
+    x: torch.Tensor,
+    input_pos: torch.Tensor,
+    semantic_ids: list,
+    previous_tokens: torch.Tensor = None,
+    *,
+    rng: SamplingRng,
+    temperature: torch.Tensor = 1.0,
+    top_p: torch.Tensor = 1.0,
+    repetition_penalty: torch.Tensor = 1.0,
+) -> torch.Tensor:
+    return _decode_one_token_naive_impl(
+        model,
+        x,
+        input_pos,
+        semantic_ids,
+        previous_tokens,
+        sampling_noise=_sampling_noise_naive(model, x, rng),
+        temperature=temperature,
+        top_p=top_p,
+        repetition_penalty=repetition_penalty,
+    )
 
 
 def decode_n_tokens(
@@ -382,15 +603,8 @@ def decode_n_tokens(
         else:
             window = previous_tokens[:, i - win_size : i].clone()
 
-        with (
-            torch.backends.cuda.sdp_kernel(
-                enable_flash=False, enable_mem_efficient=False, enable_math=True
-            )
-            if torch.cuda.is_available()
-            else nullcontext()
-        ):
-            # Call decode_one_token and clone its output
-            torch.compiler.cudagraph_mark_step_begin()  
+        is_cuda = cur_token.device.type == "cuda"
+        with sdpa_kernel(SDPBackend.MATH) if is_cuda else nullcontext():
             next_token = decode_one_token(
                 model=model,
                 x=cur_token,
@@ -444,6 +658,11 @@ def generate(
         max_new_tokens = T_new - T
 
     device, dtype = prompt.device, prompt.dtype
+    model_device = module_device(model)
+    if device != model_device:
+        raise ValueError(
+            f"Prompt is on {device}, but text-semantic model is on {model_device}"
+        )
 
     codebook_dim = 1 + model.config.num_codebooks
     # create an empty tensor of the expected final shape and fill in the current tokens
@@ -516,9 +735,8 @@ def decode_n_tokens_agent(
         else:
             window = previous_tokens[:, :, i - win_size : i]
 
-        with sdpa_kernel(
-            SDPBackend.MATH
-        ):  # Actually better for Inductor to codegen attention here
+        is_cuda = cur_token.device.type == "cuda"
+        with sdpa_kernel(SDPBackend.MATH) if is_cuda else nullcontext():
             next_token = decode_one_token(
                 model=model,
                 x=cur_token,
@@ -563,6 +781,7 @@ def generate_agent(
     decode_one_token=decode_one_token_naive_agent,
     num_samples: int = 1,
     early_stop_threshold: float = 0.6,
+    seed: Optional[int] = None,
     **sampling_kwargs,
 ):
     """
@@ -589,6 +808,12 @@ def generate_agent(
         max_new_tokens = T_new - T
 
     device, dtype = prompt.device, prompt.dtype
+    model_device = module_device(model)
+    if device != model_device:
+        raise ValueError(
+            f"Prompt is on {device}, but text-semantic model is on {model_device}"
+        )
+    rng = SamplingRng(device, seed)
 
     codebook_dim = 1 + model.config.num_codebooks
     input_pos = torch.arange(0, T, device=device)
@@ -604,6 +829,7 @@ def generate_agent(
         prompt,
         input_pos,
         semantic_ids=semantic_ids,
+        rng=rng,
         **sampling_kwargs,
     ).view(num_samples, codebook_dim, -1)
     yield next_token.cpu()
@@ -619,6 +845,7 @@ def generate_agent(
         semantic_ids=semantic_ids,
         decode_one_token=decode_one_token,
         early_stop_threshold=early_stop_threshold,
+        rng=rng,
         **sampling_kwargs,
     )
 
@@ -630,6 +857,7 @@ def encode_tokens(
     prompt_tokens=None,
     num_codebooks=4,
 ):
+    device = resolve_device(device)
     string = clean_text(string)
 
     messages = []
@@ -686,34 +914,48 @@ def encode_tokens(
 
 
 def load_model(checkpoint_path, device, precision, compile=False, is_agent=False):
+    device = resolve_device(device)
     model: Union[NaiveTransformer, DualARTransformer] = BaseTransformer.from_pretrained(
         checkpoint_path, load_weights=True, is_agent=is_agent
     )
 
-    model = model.to(device=device, dtype=precision)
-    logger.info(f"Restored model from checkpoint")
+    model = model.to(device=device, dtype=precision).eval()
+    logger.info(f"Restored model from checkpoint on {device}")
 
     if isinstance(model, DualARTransformer):
-        decode_one_token = (
-            decode_one_token_ar_agent if is_agent else decode_one_token_ar
+        decode_impl = (
+            _decode_one_token_ar_agent_impl if is_agent else _decode_one_token_ar_impl
         )
+        noise_factory = _sampling_noise_ar_agent if is_agent else _sampling_noise_ar
+        eager_decode = decode_one_token_ar_agent if is_agent else decode_one_token_ar
         logger.info("Using DualARTransformer")
     else:
-        decode_one_token = (
+        decode_impl = (
+            _decode_one_token_naive_agent_impl
+            if is_agent
+            else _decode_one_token_naive_impl
+        )
+        noise_factory = (
+            _sampling_noise_naive_agent if is_agent else _sampling_noise_naive
+        )
+        eager_decode = (
             decode_one_token_naive_agent if is_agent else decode_one_token_naive
         )
         logger.info("Using NaiveTransformer")
 
-    if compile:
-        logger.info("Compiling function...")
-        decode_one_token = torch.compile(
-            decode_one_token,
-            fullgraph=True,
-            backend="inductor" if torch.cuda.is_available() else "aot_eager",
-            mode="reduce-overhead" if torch.cuda.is_available() else None,
-        )
+    if not compile:
+        return model, eager_decode
 
-    return model.eval(), decode_one_token
+    logger.info(f"Compiling full token decode path for {device}...")
+    is_cuda = device.type == "cuda"
+    compile_kwargs = {
+        "fullgraph": True,
+        "backend": "inductor" if is_cuda else "aot_eager",
+        "mode": "reduce-overhead" if is_cuda else None,
+    }
+    compiled_impl = compile_on_device(decode_impl, device, **compile_kwargs)
+    decode_one_token = _make_decode_callable(compiled_impl, noise_factory)
+    return model, decode_one_token
 
 
 @dataclass
@@ -726,7 +968,6 @@ class GenerateResponse:
 def generate_long(
     *,
     model,
-    device: str | torch.device,
     decode_one_token: callable,
     text: str,
     num_samples: int = 1,
@@ -740,7 +981,11 @@ def generate_long(
     chunk_length: int = 150,
     prompt_text: Optional[str | list[str]] = None,
     prompt_tokens: Optional[torch.Tensor | list[torch.Tensor]] = None,
+    seed: Optional[int] = None,
 ):
+    device = module_device(model)
+    rng = SamplingRng(device, seed)
+
     assert 0 < top_p <= 1, "top_p must be in (0, 1]"
     assert 0 < repetition_penalty < 2, "repetition_penalty must be in (0, 2)"
     assert 0 < temperature < 2, "temperature must be in (0, 2)"
@@ -809,8 +1054,8 @@ def generate_long(
     )
 
     for sample_idx in range(num_samples):
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
 
         global_encoded = []
         seg_idx = 0
@@ -858,13 +1103,14 @@ def generate_long(
                 temperature=temperature,
                 top_p=top_p,
                 repetition_penalty=repetition_penalty,
+                rng=rng,
             )
 
             if sample_idx == 0 and seg_idx == 0 and compile:
                 logger.info(f"Compilation time: {time.perf_counter() - t0:.2f} seconds")
 
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
 
             t = time.perf_counter() - t0
 
@@ -877,9 +1123,10 @@ def generate_long(
                 f"Bandwidth achieved: {model_size * tokens_sec / 1e9:.02f} GB/s"
             )
 
-            if torch.cuda.is_available():
+            if device.type == "cuda":
                 logger.info(
-                    f"GPU Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB"
+                    f"GPU Memory used on {device}: "
+                    f"{torch.cuda.max_memory_reserved(device) / 1e9:.02f} GB"
                 )
 
             # Put the generated tokens
@@ -911,29 +1158,86 @@ class GenerateRequest:
     response_queue: queue.Queue
 
 
+class TextSemanticWorker:
+    """Owns a text-semantic request queue, worker thread, and model device."""
+
+    def __init__(self, device: torch.device):
+        self.device = resolve_device(device)
+        self._requests: queue.Queue[GenerateRequest | None] = queue.Queue()
+        self._thread: Optional[threading.Thread] = None
+        self._closed = False
+        self._lock = threading.Lock()
+
+    def attach_thread(self, thread: threading.Thread) -> None:
+        with self._lock:
+            if self._thread is not None:
+                raise RuntimeError("TextSemanticWorker thread is already attached")
+            self._thread = thread
+
+    def submit(self, request: GenerateRequest) -> None:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("TextSemanticWorker is closed")
+            self._requests.put(request)
+
+    def put(
+        self, request: GenerateRequest, block: bool = True, timeout: Optional[float] = None
+    ) -> None:
+        """Compatibility alias for callers that previously received queue.Queue."""
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("TextSemanticWorker is closed")
+            self._requests.put(request, block=block, timeout=timeout)
+
+    def next_request(self) -> GenerateRequest | None:
+        return self._requests.get()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            thread = self._thread
+        self._requests.put(None)
+        if thread is not None and thread is not threading.current_thread():
+            thread.join()
+
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+
 def launch_thread_safe_queue(
     checkpoint_path,
     device,
     precision,
     compile: bool = False,
 ):
-    input_queue = queue.Queue()
+    device = resolve_device(device)
+    input_queue = TextSemanticWorker(device)
     init_event = threading.Event()
+    init_error: list[Exception] = []
 
     def worker():
-        model, decode_one_token = load_model(
-            checkpoint_path, device, precision, compile=compile
-        )
-        with torch.device(device):
+        try:
+            model, decode_one_token = load_model(
+                checkpoint_path, device, precision, compile=compile
+            )
             model.setup_caches(
                 max_batch_size=1,
-                max_seq_len=4096, # model.config.max_seq_len
+                max_seq_len=4096,  # model.config.max_seq_len
                 dtype=next(model.parameters()).dtype,
             )
+        except Exception as exc:
+            init_error.append(exc)
+            init_event.set()
+            return
+
         init_event.set()
 
         while True:
-            item: GenerateRequest | None = input_queue.get()
+            item = input_queue.next_request()
             if item is None:
                 break
 
@@ -950,8 +1254,13 @@ def launch_thread_safe_queue(
             except Exception as e:
                 response_queue.put(WrappedGenerateResponse(status="error", response=e))
 
-    threading.Thread(target=worker, daemon=True).start()
+    thread = threading.Thread(target=worker, daemon=True)
+    input_queue.attach_thread(thread)
+    thread.start()
     init_event.wait()
+    if init_error:
+        thread.join()
+        raise RuntimeError("Failed to initialize text-semantic worker") from init_error[0]
 
     return input_queue
 
@@ -962,27 +1271,33 @@ def launch_thread_safe_queue_agent(
     precision,
     compile: bool = False,
 ):
-    input_queue = queue.Queue()
+    device = resolve_device(device)
+    input_queue = TextSemanticWorker(device)
     init_event = threading.Event()
+    init_error: list[Exception] = []
 
     tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
     config = BaseModelArgs.from_pretrained(checkpoint_path)
 
     def worker():
-        model, decode_one_token = load_model(
-            checkpoint_path, device, precision, compile=compile, is_agent=True
-        )
-
-        with torch.device(device):
+        try:
+            model, decode_one_token = load_model(
+                checkpoint_path, device, precision, compile=compile, is_agent=True
+            )
             model.setup_caches(
                 max_batch_size=1,
-                max_seq_len=4096, #model.config.max_seq_len,
+                max_seq_len=4096,  # model.config.max_seq_len
                 dtype=next(model.parameters()).dtype,
             )
+        except Exception as exc:
+            init_error.append(exc)
+            init_event.set()
+            return
+
         init_event.set()
 
         while True:
-            item: GenerateRequest | None = input_queue.get()
+            item = input_queue.next_request()
             if item is None:
                 break
 
@@ -1004,8 +1319,15 @@ def launch_thread_safe_queue_agent(
                 logger.exception(f"Error in worker: {traceback.format_exc()}")
                 response_queue.put("error")
 
-    threading.Thread(target=worker, daemon=True).start()
+    thread = threading.Thread(target=worker, daemon=True)
+    input_queue.attach_thread(thread)
+    thread.start()
     init_event.wait()
+    if init_error:
+        thread.join()
+        raise RuntimeError(
+            "Failed to initialize text-semantic agent worker"
+        ) from init_error[0]
 
     return input_queue, tokenizer, config
 
@@ -1060,6 +1382,7 @@ def main(
 ) -> None:
     os.makedirs(output_dir, exist_ok=True)
     precision = torch.half if half else torch.bfloat16
+    device = resolve_device(device, fallback_to_cpu=True)
 
     if prompt_text is not None and len(prompt_text) != len(prompt_tokens):
         raise ValueError(
@@ -1071,28 +1394,21 @@ def main(
     model, decode_one_token = load_model(
         checkpoint_path, device, precision, compile=compile
     )
-    with torch.device(device):
-        model.setup_caches(
-            max_batch_size=1,
-            max_seq_len=model.config.max_seq_len,
-            dtype=next(model.parameters()).dtype,
-        )
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+    model.setup_caches(
+        max_batch_size=1,
+        max_seq_len=model.config.max_seq_len,
+        dtype=next(model.parameters()).dtype,
+    )
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
 
     logger.info(f"Time to load model: {time.time() - t0:.02f} seconds")
 
     if prompt_tokens is not None:
         prompt_tokens = [torch.from_numpy(np.load(p)).to(device) for p in prompt_tokens]
 
-    torch.manual_seed(seed)
-
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-
     generator = generate_long(
         model=model,
-        device=device,
         decode_one_token=decode_one_token,
         text=text,
         num_samples=num_samples,
@@ -1105,6 +1421,7 @@ def main(
         chunk_length=chunk_length,
         prompt_text=prompt_text,
         prompt_tokens=prompt_tokens,
+        seed=seed,
     )
 
     idx = 0
