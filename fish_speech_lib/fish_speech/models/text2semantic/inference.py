@@ -1,5 +1,6 @@
 # Original work Copyright 2024 Fish Audio Authors (Apache License 2.0)
 # Modified by Atm4x in 2025.
+# SPDX-License-Identifier: Apache-2.0
 
 # --- In decode_one_token_ar function ---
 # Added .clone() before stacking codebooks.

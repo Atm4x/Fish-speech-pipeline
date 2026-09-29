@@ -1,149 +1,76 @@
-# **Fish-Speech-Lib** 0.1.0
+# Fish-Speech-Lib
 
-Original project: [Fish-Speech](https://github.com/fishaudio/fish-speech)
-<hr/>
+Fish-Speech-Lib provides a Python interface to the Fish Speech inference pipeline for text-to-speech and voice cloning, without requiring the Fish Speech web UI.
 
-***Fish-Speech-Lib*** is a Python library that provides a simple interface to the Fish-Speech pipeline, allowing you to generate high-quality speech with voice cloning capabilities without requiring a web UI.
+Upstream project: [fishaudio/fish-speech](https://github.com/fishaudio/fish-speech)
 
-Pytorch with CUDA or MPS is required to get Fish-Speech-Lib working.
+## Requirements
 
-**It may contain bugs. Report an issue in case of error.**
+- Python 3.10 or newer.
+- PyTorch installed separately for the accelerator you intend to use.
+- CUDA is recommended for NVIDIA GPUs; CPU and MPS are supported by the library's device routing, although performance and feature support vary by backend.
 
-## Prerequisites
+## Installation
 
-You must have **Python>=3.10** installed.
+Install PyTorch for your platform first, then install the library:
 
-You must have **CUDA or MPS** support for your GPU (MPS is not fully tested yet).
-
-## **Installation**
-1) Install pytorch **with CUDA or MPS support** here: https://pytorch.org/get-started/locally/
-
-2) Then, install Fish-Speech-Lib using pip install:
-```
+```bash
 pip install fish_speech_lib
 ```
 
-When using the source tree directly instead of installing the package, add the directory that contains `fish_speech_lib` to `PYTHONPATH`/`sys.path`. No `.project-root` marker is required.
+When running directly from the source tree, add the repository root to `PYTHONPATH` or `sys.path`. A `.project-root` marker is not required.
 
-## Usage
-
-Fish-Speech-Lib provides a class called `FishSpeech`. There are a few parameters that are optional:
-
-`device` - Device to run on: "cuda"/"cuda:0" (default GPU), an explicit GPU such as "cuda:1", "cpu", or "mps"
-
-`half` - Whether to use half-precision (FP16) (default is False)
-
-`compile_model` - Whether to use torch.compile for optimization (Not tested, needs to have CUDA toolkit installed)(default is False)
-
-`llama_checkpoint_path` - Path to LLaMA model (default is "checkpoints/fish-speech-1.5")
-
-`decoder_checkpoint_path` - Path to decoder model (default is "checkpoints/fish-speech-1.5/firefly-gan-vq-fsq-8x1024-21hz-generator.pth")
-
-`streaming` - Enable streaming mode (DOESN'T WORK RN) (default is False)
-
-To use the model, first make an instance of FishSpeech:
+## Basic usage
 
 ```python
-from fish_speech_lib.inference import FishSpeech
+from fish_speech_lib import FishSpeech
 import soundfile as sf
 
-# Initialize model
-tts = FishSpeech(
-    device="cuda",
-    half=False,
-    compile_model=False
-)
+with FishSpeech(device="cuda", compile_model=False) as tts:
+    sample_rate, audio = tts(
+        text="Hello, world!",
+        max_new_tokens=450,
+    )
+
+sf.write("output.wav", audio, sample_rate)
 ```
 
-And the final step is calling the model to generate speech:
+### Device selection
 
-```python 
-sample_rate, audio_data = tts(text="Hello, world!", max_new_tokens=450)
-sf.write("output.wav", audio_data, sample_rate, format='WAV')
-```
-
-Parameters for the `tts()` function:
-
-`text` - Text to be synthesized (required)
-
-`reference_audio` - Path to reference audio for voice cloning (optional, default is None)
-
-`reference_audio_text` - Text spoken in the reference audio (optional, default is "")
-
-`top_p` - Top-p sampling parameter (optional, default is 0.7)
-
-`temperature` - Temperature for sampling (optional, default is 0.7)
-
-`repetition_penalty` - Repetition penalty (optional, default is 1.2)
-
-`max_new_tokens` - Maximum number of tokens to generate (optional, default is 1024)
-
-`chunk_length` - Length of iterative prompt in words (optional, default is 200)
-
-`seed` - Random seed for reproducibility (optional, default is None)
-
-`use_memory_cache` - Use memory cache for reference audio (optional, default is True)
-
-## Example of usage
-A simple example for generating speech:
+`device` accepts normal PyTorch device strings. In a multi-GPU process, pass an explicit CUDA index when placement matters:
 
 ```python
-from fish_speech_lib.inference import FishSpeech
-import soundfile as sf
-
-# Initialize model
-tts = FishSpeech(device="cuda")
-
-# Generate speech
-sample_rate, audio_data = tts(text="Hello, world!", max_new_tokens=450)
-
-# Save the audio
-sf.write("output.wav", audio_data, sample_rate, format='WAV')
+tts = FishSpeech(device="cuda:1")
 ```
 
-## Voice Cloning Example
+A bare `"cuda"` selects the first visible CUDA device (`cuda:0`). Explicit indices such as `"cuda:1"` are preserved throughout the library's model, cache, sampling, and decoder paths.
+
+## Voice cloning
 
 ```python
-# Generate speech with voice cloning
-sample_rate, audio_data = tts(
-    "This is an example of voice cloning with Fish-Speech.",
+sample_rate, audio = tts(
+    text="This is an example of voice cloning.",
     reference_audio="path/to/reference.wav",
-    reference_audio_text="The text that is spoken in the reference audio.",
+    reference_audio_text="The text spoken in the reference audio.",
     max_new_tokens=1000,
-    chunk_length=1000
 )
-
-sf.write("cloned_voice.wav", audio_data, sample_rate, format='WAV')
 ```
 
-## Model Downloading
+## `torch.compile`
 
-The library automatically downloads the required models from the Hugging Face Hub if they are not found locally. The models are downloaded to the specified checkpoint paths.
+Set `compile_model=True` to compile the token decode path with `torch.compile`. Compilation is lazy, so the first inference can take substantially longer than later calls. CUDA compilation is invoked inside the selected model device context; the library does not remap `CUDA_VISIBLE_DEVICES` or install process-wide Torch/Inductor monkey patches.
 
-## Exceptions
+## Model downloads
 
-No exceptions found rn, but if you encounter any, please report them.
+If the default Fish Speech 1.5 checkpoints are missing, the library downloads them from `fishaudio/fish-speech-1.5` on Hugging Face.
 
 ## License
 
-The code within this repository (`Fish-Speech-Lib`) is licensed under the **Apache License 2.0**. You can find a copy of the license in the `LICENSE` file.
+The source code in this repository is distributed under the Apache License 2.0. See [`LICENSE`](LICENSE). Files derived from Fish Speech retain Fish Audio attribution, and files modified by this project carry modification notices.
 
-**IMPORTANT NOTE ON MODEL USAGE:**
-The pre-trained models automatically downloaded and utilized by this library originate from the Fish-Speech project and are licensed separately under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
-
-*   **This means the models CANNOT be used for any commercial purposes.**
-*   Please review the full CC BY-NC-SA 4.0 license terms here: [https://creativecommons.org/licenses/by-nc-sa/4.0/](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-
-## Disclaimer
-
-Users of this library are solely responsible for ensuring their usage complies with all applicable laws and ethical standards. Do not use this tool for illegal or harmful purposes. The developers of this fork are not liable for any misuse.
+The Fish Speech 1.5 model weights downloaded from Hugging Face are separate assets and are licensed separately under CC BY-NC-SA 4.0. The repository's Apache-2.0 license does not relicense those model weights.
 
 ## Copyright
 
-*   Original Work (Fish-Speech): Copyright (c) 2024 Fish Audio Authors
-*   Modifications in this Fork (Fish-Speech-Lib): Copyright (c) 2025 Atm4x
-
-## Authors
-[Atm4x](https://github.com/Atm4x)
-
-Based on [Fish-Speech](https://github.com/fishaudio/fish-speech)
+- Original Fish Speech code: Copyright 2024-2025 Fish Audio Authors.
+- Fish-Speech-Lib modifications: Copyright 2025-2026 Atm4x.

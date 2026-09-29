@@ -1,5 +1,6 @@
 # Copyright 2025 Atm4x (Apache License 2.0)
 # See LICENSE file for details.
+# SPDX-License-Identifier: Apache-2.0
 
 FIREFLY_GAN_VQ_CONFIG = {
     "_target_": "fish_speech_lib.fish_speech.models.vqgan.modules.firefly.FireflyArchitecture",

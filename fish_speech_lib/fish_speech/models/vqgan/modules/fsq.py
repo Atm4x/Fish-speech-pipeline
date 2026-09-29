@@ -1,3 +1,6 @@
+# Copyright 2024 Fish Audio Authors
+# SPDX-License-Identifier: Apache-2.0
+
 from dataclasses import dataclass
 
 import torch

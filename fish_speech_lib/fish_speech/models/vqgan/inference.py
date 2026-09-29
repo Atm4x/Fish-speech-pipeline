@@ -5,6 +5,7 @@
 # + # Loads VQGAN config directly from fish_speech_lib.config.FIREFLY_GAN_VQ_CONFIG.
 # + from fish_speech_lib.config import FIREFLY_GAN_VQ_CONFIG # Added import
 # + model = instantiate(FIREFLY_GAN_VQ_CONFIG) # Changed instantiation
+# SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
 

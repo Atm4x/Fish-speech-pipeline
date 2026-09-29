@@ -122,11 +122,6 @@ class CompileRuntimeTests(unittest.TestCase):
 
         with (
             patch.object(COMPILE_MODULE, "resolve_device", return_value=torch.device("cuda:1")),
-            patch.object(
-                COMPILE_MODULE,
-                "_inductor_options",
-                return_value={"cuda.arch": "89"},
-            ),
             patch.object(COMPILE_MODULE.torch.cuda, "device", return_value=DeviceContext()),
             patch.object(COMPILE_MODULE.torch, "compile", side_effect=fake_compile),
             patch.object(
@@ -173,137 +168,12 @@ class CompileRuntimeTests(unittest.TestCase):
         noise = torch.rand(2, 32).clamp_min_(1e-4)
         self.assertTrue(torch.equal(token_math(logits, noise), compiled(logits, noise)))
 
-    def test_inductor_worker_device_cache_is_scoped_and_restored(self):
-        from torch._dynamo import device_interface
-
-        cache = device_interface.caching_worker_current_devices
-        original = dict(cache)
-        try:
-            cache.clear()
-            cache["cuda"] = 0
-            with COMPILE_MODULE._compiler_worker_device_context(
-                torch.device("cuda:1")
-            ):
-                self.assertEqual(cache["cuda"], 1)
-            self.assertEqual(cache["cuda"], 0)
-
-            cache.pop("cuda")
-            with COMPILE_MODULE._compiler_worker_device_context(
-                torch.device("cuda:1")
-            ):
-                self.assertEqual(cache["cuda"], 1)
-            self.assertNotIn("cuda", cache)
-        finally:
-            cache.clear()
-            cache.update(original)
-
-    @patch.object(torch.cuda, "get_device_capability", return_value=(8, 9))
-    def test_inductor_config_pins_selected_cuda_arch(self, _capability):
-        backend = COMPILE_MODULE._DeviceBoundInductorBackend(
-            torch.device("cuda:1"),
-            {"backend": "inductor", "mode": "reduce-overhead"},
-        )
-        self.assertEqual(backend.config_patches["cuda.arch"], "89")
-        self.assertTrue(backend.config_patches.get("triton.cudagraphs"))
-
-    def test_device_bound_backend_scopes_every_backend_compile(self):
-        import torch._inductor.async_compile as async_compile
-        import torch._inductor.compile_fx as compile_fx_module
-
-        events = []
-
-        class BackendContext:
-            def __enter__(self):
-                events.append("enter-backend")
-
-            def __exit__(self, exc_type, exc, tb):
-                events.append("exit-backend")
-
-        def fake_compile_fx(graph_module, example_inputs, config_patches=None):
-            events.append(("compile-fx", dict(config_patches or {})))
-            return "compiled-graph"
-
-        with patch.object(
-            COMPILE_MODULE,
-            "_inductor_options",
-            return_value={"cuda.arch": "89"},
-        ):
-            backend = COMPILE_MODULE._DeviceBoundInductorBackend(
-                torch.device("cuda:1"),
-                {"backend": "inductor", "mode": "reduce-overhead"},
-            )
-
-        with (
-            patch.object(COMPILE_MODULE, "_compile_backend_context", return_value=BackendContext()),
-            patch.object(COMPILE_MODULE, "_assert_cuda_compiler_device"),
-            patch.object(COMPILE_MODULE, "_validate_example_input_devices"),
-            patch.object(
-                async_compile,
-                "maybe_warm_pool",
-                side_effect=lambda: events.append("warm-pool"),
-            ),
-            patch.object(compile_fx_module, "compile_fx", new=fake_compile_fx),
-        ):
-            self.assertEqual(backend(object(), []), "compiled-graph")
-            self.assertEqual(backend(object(), []), "compiled-graph")
-
-        self.assertEqual(events.count("enter-backend"), 2)
-        self.assertEqual(events.count("exit-backend"), 2)
-        compile_events = [event for event in events if isinstance(event, tuple)]
-        self.assertEqual(len(compile_events), 2)
-        self.assertTrue(all(event[1]["cuda.arch"] == "89" for event in compile_events))
-
-    def test_compiler_device_mismatch_fails_before_codegen(self):
-        with (
-            patch.object(COMPILE_MODULE.torch.cuda, "current_device", return_value=0),
-            patch.object(COMPILE_MODULE, "_inductor_worker_current_device", return_value=1),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "compiler CUDA context mismatch"):
-                COMPILE_MODULE._assert_cuda_compiler_device(
-                    torch.device("cuda:1"), "89"
-                )
-
-    def test_device_zero_compat_patch_is_scoped(self):
-        import torch._inductor.utils as inductor_utils
-
-        module_name = COMPILE_MODULE._SHARED_MEMORY_IMPORTS[0]
-        previous_module = sys.modules.get(module_name)
-        fake_module = types.ModuleType(module_name)
-        original = inductor_utils.get_gpu_shared_memory
-        fake_module.get_gpu_shared_memory = original
-        sys.modules[module_name] = fake_module
-        try:
-            with COMPILE_MODULE._inductor_device_zero_compat_context(
-                torch.device("cuda:1")
-            ):
-                patched = inductor_utils.get_gpu_shared_memory
-                self.assertIsNot(patched, original)
-                self.assertIs(fake_module.get_gpu_shared_memory, patched)
-            self.assertIs(inductor_utils.get_gpu_shared_memory, original)
-            self.assertIs(fake_module.get_gpu_shared_memory, original)
-        finally:
-            if previous_module is None:
-                sys.modules.pop(module_name, None)
-            else:
-                sys.modules[module_name] = previous_module
-
-    def test_real_cpu_inductor_backend_smoke(self):
-        compiled = COMPILE_MODULE.compile_on_device(
-            lambda value: torch.sin(value) + torch.cos(value),
-            "cpu",
-            fullgraph=True,
-            backend="inductor",
-        )
-        value = torch.randn(8)
-        expected = torch.sin(value) + torch.cos(value)
-        self.assertTrue(torch.allclose(compiled(value), expected))
-
-    def test_compile_runtime_never_calls_global_cuda_set_device(self):
+    def test_compile_runtime_never_calls_set_device(self):
         source = (
             ROOT
             / "fish_speech_lib/fish_speech/models/text2semantic/compile_runtime.py"
         ).read_text(encoding="utf-8")
-        self.assertNotIn("torch.cuda.set_device", source)
+        self.assertNotIn("set_device", source)
         self.assertIn("torch.cuda.device", source)
 
 

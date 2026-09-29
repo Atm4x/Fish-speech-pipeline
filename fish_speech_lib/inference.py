@@ -1,5 +1,6 @@
 # Copyright 2025 Atm4x (Apache License 2.0)
 # See LICENSE file for details.
+# SPDX-License-Identifier: Apache-2.0
 
 
 import torch
@@ -248,7 +249,6 @@ class FishSpeech:
                 #   process wav header if needed (for streaming)
                 pass # Сейчас не нужно
             elif result.code == "segment":
-                print("test:", str(result.audio[1]))
                 #   process each audio segment, for streaming
                 pass # Сейчас не нужно
             elif result.code == "final":

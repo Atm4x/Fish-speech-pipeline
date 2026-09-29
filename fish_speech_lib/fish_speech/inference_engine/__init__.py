@@ -5,6 +5,7 @@
 # Instead of yielding segments directly when streaming=True,
 # the code now always collects all segments and concatenates them
 # at the end, returning a single 'final' result.
+# SPDX-License-Identifier: Apache-2.0
 
 import queue
 from typing import Generator
