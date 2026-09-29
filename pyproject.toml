@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fish_speech_lib"
-version = "0.1.0.2"
+version = "0.1.1"
 description = "Python library interface for Fish Speech text-to-speech and voice-cloning inference."
 authors = [
     {name = "Atm4x", email = "bloodyseiko@gmail.com"},
