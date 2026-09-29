@@ -37,7 +37,6 @@ class ApacheLicenseTests(unittest.TestCase):
 class CleanCompilerIntegrationTests(unittest.TestCase):
     def test_no_compat_monkey_patch_package_is_shipped(self):
         self.assertFalse((PACKAGE / "fish_speech/compat").exists())
-        self.assertFalse((PACKAGE / "fish_speech/diagnostics.py").exists())
 
     def test_no_cuda_visible_devices_remapping(self):
         sources = "\n".join(

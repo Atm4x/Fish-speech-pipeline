@@ -1,3 +1,6 @@
+# Copyright 2025-2026 Atm4x
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -9,19 +12,14 @@ import threading
 import time
 from typing import Any
 
-from loguru import logger
-
-
 _DIAGNOSTIC_LOCK = threading.RLock()
 _SESSION_ID = f"{os.getpid()}-{time.time_ns():x}"
-_DEFAULT_DIAGNOSTIC_LOG = Path(tempfile.gettempdir()) / "fish_speech_device_trace.log"
-DIAGNOSTIC_LOG = Path(
-    os.environ.get("FISH_SPEECH_DEVICE_LOG", str(_DEFAULT_DIAGNOSTIC_LOG))
-).expanduser()
+_DEVICE_EVENTS: dict[str, dict[str, Any]] = {}
+DIAGNOSTIC_LOG = Path(tempfile.gettempdir()) / f"fish_speech_devices_{os.getpid()}.json"
 
 
 def diagnostic_log_path() -> Path:
-    """Return the process-independent Fish device trace file path."""
+    """Return the process's compact device snapshot in the system temp directory."""
     return DIAGNOSTIC_LOG
 
 
@@ -37,42 +35,31 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def record_device_event(
-    event: str,
-    *,
-    echo: bool = True,
-    level: str = "INFO",
-    **fields: Any,
-) -> None:
-    """Append one structured device event and optionally mirror it through Loguru.
-
-    The file sink is intentionally independent of the host application's logging
-    configuration so diagnostics survive when stderr/stdout are swallowed.
-    """
+def record_device_event(event: str, **fields: Any) -> None:
+    """Replace each device's last setup event without appending logs or printing."""
     payload = {
-        "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="milliseconds"),
-        "session": _SESSION_ID,
-        "pid": os.getpid(),
-        "thread": threading.current_thread().name,
-        "thread_id": threading.get_ident(),
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         "event": event,
+        "fields": _json_safe(fields),
     }
-    payload.update({key: _json_safe(value) for key, value in fields.items()})
-    line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-
-    try:
-        with _DIAGNOSTIC_LOCK:
-            DIAGNOSTIC_LOG.parent.mkdir(parents=True, exist_ok=True)
-            with DIAGNOSTIC_LOG.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
-    except OSError as exc:
-        if echo:
-            logger.warning("Fish device trace file write failed: {}", exc)
-
-    if echo:
-        summary = " ".join(
-            f"{key}={value}"
-            for key, value in payload.items()
-            if key not in {"timestamp", "session", "pid", "thread_id", "event"}
-        )
-        logger.log(level, "Fish device trace [{}] {}", event, summary)
+    with _DIAGNOSTIC_LOCK:
+        _DEVICE_EVENTS[str(fields.get("device", "default"))] = payload
+        snapshot = {"session": _SESSION_ID, "pid": os.getpid(), "devices": _DEVICE_EVENTS}
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=DIAGNOSTIC_LOG.parent,
+                prefix="fish-speech-", suffix=".tmp", delete=False,
+            ) as handle:
+                temporary = Path(handle.name)
+                json.dump(snapshot, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            temporary.replace(DIAGNOSTIC_LOG)
+        except OSError:
+            pass
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass

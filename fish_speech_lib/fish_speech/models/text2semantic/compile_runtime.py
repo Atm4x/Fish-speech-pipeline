@@ -10,6 +10,7 @@ from typing import Callable, Iterator, TypeVar
 import torch
 
 from fish_speech_lib.fish_speech.device import DeviceLike, resolve_device
+from fish_speech_lib.fish_speech.diagnostics import record_device_event
 
 
 F = TypeVar("F", bound=Callable)
@@ -50,6 +51,8 @@ def compile_on_device(function: F, device: DeviceLike, **compile_kwargs) -> F:
 
     with _compile_context(resolved, compile_kwargs):
         compiled = torch.compile(function, **compile_kwargs)
+
+    record_device_event("compiler_configured", device=resolved, options=compile_kwargs)
 
     @wraps(function)
     def invoke(*args, **kwargs):

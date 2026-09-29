@@ -34,6 +34,11 @@ DEVICE_MODULE = load_module(
     ROOT / "fish_speech_lib/fish_speech/device.py",
 )
 sys.modules["fish_speech_lib.fish_speech.device"] = DEVICE_MODULE
+DIAGNOSTICS_MODULE = load_module(
+    "fish_speech_lib.fish_speech.diagnostics",
+    ROOT / "fish_speech_lib/fish_speech/diagnostics.py",
+)
+sys.modules["fish_speech_lib.fish_speech.diagnostics"] = DIAGNOSTICS_MODULE
 SAMPLING_MODULE = load_module(
     "fish_speech_lib.fish_speech.models.text2semantic.sampling",
     ROOT / "fish_speech_lib/fish_speech/models/text2semantic/sampling.py",
