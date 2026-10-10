@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fish_speech_lib"
-version = "0.1.1"
+version = "0.1.1.1"
 description = "Python library interface for Fish Speech text-to-speech and voice-cloning inference."
 authors = [
     {name = "Atm4x", email = "bloodyseiko@gmail.com"},
@@ -30,7 +30,8 @@ dependencies = [
     "transformers>=4.45.2",
     "datasets==2.18.0",
     "lightning>=2.1.0",
-    "hydra-core>=1.3.2",
+    "hydra-core>=1.3.2,<1.4",
+    "omegaconf>=2.2,<2.4",
     "tensorboard>=2.14.1",
     "einops>=0.7.0",
     "librosa>=0.9.1",
